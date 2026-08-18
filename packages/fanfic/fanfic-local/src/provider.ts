@@ -66,6 +66,9 @@ import type {
   FanficAuditRequest,
   FanficAuditResult,
   FanficAuthorIntent,
+  FanficDraft,
+  FanficMysteryRevealDeclaration,
+  FanficWritingContract,
   FanficBranch,
   FanficBranchIdValue,
   FanficCausalThread,
@@ -103,10 +106,14 @@ import type {
   SetFanficHorizonRequest,
   UpsertFanficMysteryTruthRequest,
   UpsertFanficInventionRequest,
+  StageFanficDraftRequest,
+  UpdateFanficDraftRequest,
+  ProseQualityResult,
+  ProseQualityFinding,
 } from '@deepseek-ai/dsh-fanfic'
 
 /** Local canon-pack and branch-storage configuration. */
-export interface Config {
+export interface ProviderConfig {
   /** Provider id registered on `ctx.fanfic`. */
   providerId: string
   /** Directory containing manifest.json, source.json, chapters.ndjson, and graph/*.ndjson. */
@@ -147,8 +154,18 @@ export interface Config {
   authorContextBranchRecordLimit: number
   /** Maximum source excerpts admitted into canonTruth inside author_context. */
   authorContextSourceExcerptLimit: number
-  /** Soft serialized JSON budget for author_context; compaction removes optional evidence first. */
+  /** Hard serialized JSON budget for author_context; compaction removes optional evidence first. */
   authorContextMaxJsonChars: number
+  /** Maximum Han characters in a paragraph still considered ultra-short by the prose-quality guard. */
+  proseQualityUltraShortHanChars: number
+  /** Consecutive ultra-short paragraphs that require revision. */
+  proseQualityMaxUltraShortRun: number
+  /** Tail ultra-short paragraph ratio that requires revision. */
+  proseQualityTailUltraShortRatio: number
+  /** Minimum Han-bigram diversity accepted for long drafts. */
+  proseQualityMinBigramDiversity: number
+  /** Filler-phrase hits in the draft tail that require revision. */
+  proseQualityTailFillerLimit: number
 }
 
 interface CanonPackManifest {
@@ -230,6 +247,7 @@ export class LocalFanficProvider implements FanficProvider {
   private readonly enrichmentGraphDir: string
   private readonly enrichmentCoveragePath: string
   private readonly auditReceiptsDir: string
+  private readonly draftsDir: string
   private readonly maxSearchResults: number
   private readonly maxExcerptChars: number
   private readonly maxStructuredRecords: number
@@ -248,12 +266,17 @@ export class LocalFanficProvider implements FanficProvider {
   private readonly authorContextBranchRecordLimit: number
   private readonly authorContextSourceExcerptLimit: number
   private readonly authorContextMaxJsonChars: number
+  private readonly proseQualityUltraShortHanChars: number
+  private readonly proseQualityMaxUltraShortRun: number
+  private readonly proseQualityTailUltraShortRatio: number
+  private readonly proseQualityMinBigramDiversity: number
+  private readonly proseQualityTailFillerLimit: number
   private loadPromise: Promise<LoadedCanonPack> | undefined
   private enrichmentTail: Promise<void> = Promise.resolve()
   private copyCorpusPromise: Promise<CopyCorpus> | undefined
   private readonly branchLocks = new Map<string, Promise<void>>()
 
-  constructor(config: Config) {
+  constructor(config: ProviderConfig) {
     this.id = config.providerId.trim()
     this.canonPackDir = resolve(config.canonPackDir)
     this.stateDir = resolve(config.stateDir)
@@ -261,6 +284,7 @@ export class LocalFanficProvider implements FanficProvider {
     this.enrichmentGraphDir = join(this.stateDir, 'enrichment', 'graph')
     this.enrichmentCoveragePath = join(this.stateDir, 'enrichment', 'coverage.ndjson')
     this.auditReceiptsDir = join(this.stateDir, 'audit-receipts')
+    this.draftsDir = join(this.stateDir, 'drafts')
     this.maxSearchResults = positiveSafeInteger(config.maxSearchResults, 'maxSearchResults')
     this.maxExcerptChars = positiveSafeInteger(config.maxExcerptChars, 'maxExcerptChars')
     this.maxStructuredRecords = positiveSafeInteger(config.maxStructuredRecords, 'maxStructuredRecords')
@@ -279,8 +303,15 @@ export class LocalFanficProvider implements FanficProvider {
     this.authorContextBranchRecordLimit = positiveSafeInteger(config.authorContextBranchRecordLimit, 'authorContextBranchRecordLimit')
     this.authorContextSourceExcerptLimit = positiveSafeInteger(config.authorContextSourceExcerptLimit, 'authorContextSourceExcerptLimit')
     this.authorContextMaxJsonChars = positiveSafeInteger(config.authorContextMaxJsonChars, 'authorContextMaxJsonChars')
+    this.proseQualityUltraShortHanChars = positiveSafeInteger(config.proseQualityUltraShortHanChars, 'proseQualityUltraShortHanChars')
+    this.proseQualityMaxUltraShortRun = positiveSafeInteger(config.proseQualityMaxUltraShortRun, 'proseQualityMaxUltraShortRun')
+    this.proseQualityTailUltraShortRatio = finiteNumber(config.proseQualityTailUltraShortRatio, 'proseQualityTailUltraShortRatio')
+    this.proseQualityMinBigramDiversity = finiteNumber(config.proseQualityMinBigramDiversity, 'proseQualityMinBigramDiversity')
+    this.proseQualityTailFillerLimit = positiveSafeInteger(config.proseQualityTailFillerLimit, 'proseQualityTailFillerLimit')
     if (this.styleDeviationRatio <= 0) throw new Error('styleDeviationRatio must be greater than zero')
     if (this.styleRevisionRequiredRatio <= this.styleDeviationRatio) throw new Error('styleRevisionRequiredRatio must be greater than styleDeviationRatio')
+    if (!(this.proseQualityTailUltraShortRatio > 0 && this.proseQualityTailUltraShortRatio <= 1)) throw new Error('proseQualityTailUltraShortRatio must be in (0, 1]')
+    if (!(this.proseQualityMinBigramDiversity > 0 && this.proseQualityMinBigramDiversity <= 1)) throw new Error('proseQualityMinBigramDiversity must be in (0, 1]')
     if (!existsSync(join(this.canonPackDir, 'manifest.json'))
       || !existsSync(join(this.canonPackDir, 'source.json'))
       || !existsSync(join(this.canonPackDir, 'chapters.ndjson'))) {
@@ -401,8 +432,7 @@ export class LocalFanficProvider implements FanficProvider {
       query: request.query || `${pov} ${contextEntities.join(' ')} ${request.sceneGoal}`,
       searchLimit: Math.min(this.authorContextSearchLimit, this.maxSearchResults),
     }, signal)
-    const dossierNames = uniqueStrings([pov, ...participants, ...contextExpansion.discovered.map(item => item.entity)])
-      .slice(0, Math.min(this.authorContextCharacterLimit, this.maxStructuredRecords))
+    const dossierNames = uniqueStrings([pov, ...participants, ...contextExpansion.discovered.map(item => item.entity)]).slice(0, Math.min(this.authorContextCharacterLimit, this.maxStructuredRecords))
     const characterIntelligence: CharacterIntelligence[] = []
     for (const character of dossierNames) {
       characterIntelligence.push(await this.characterIntelligence({
@@ -424,12 +454,9 @@ export class LocalFanficProvider implements FanficProvider {
     }, signal)
     const storyDirector = request.branchId === undefined || request.fanficChapter === undefined
       ? undefined
-      : await this.storyDirectorContext(
-        { branchId: request.branchId, fanficChapter: request.fanficChapter, horizonSize: request.storyHorizonSize },
-        signal,
-      )
+      : await this.storyDirectorContext({ branchId: request.branchId, fanficChapter: request.fanficChapter, horizonSize: request.storyHorizonSize }, signal)
     const authorPacket: AuthorContext = {
-      version: 3,
+      version: 4,
       scene: {
         canonPoint: { chapter: requestedCutoff },
         ...request.fanficChapter === undefined ? {} : { fanficChapter: positiveSafeInteger(request.fanficChapter, 'fanficChapter') },
@@ -444,14 +471,7 @@ export class LocalFanficProvider implements FanficProvider {
       characterIntelligence,
       narrativeStyle,
       ...storyDirector === undefined ? {} : { storyDirector },
-      ...branch === undefined ? {} : {
-        branch: compactBranchForAuthor(
-          branch,
-          uniqueStrings([pov, ...contextEntities]),
-          this.authorContextBranchRecordLimit,
-          this.storyRecentSummaryLimit,
-        ),
-      },
+      ...branch === undefined ? {} : { branch: compactBranchForAuthor(branch, uniqueStrings([pov, ...contextEntities]), this.authorContextBranchRecordLimit, this.storyRecentSummaryLimit) },
       divergencePolicy: {
         diverged: earliestDivergence !== undefined && earliestDivergence.atChapter <= requestedCutoff,
         canonStableThroughChapter: stableThrough,
@@ -460,6 +480,7 @@ export class LocalFanficProvider implements FanficProvider {
       },
       hardConstraints: [
         `Do not use canon information from narrative chapters after ${requestedCutoff}.`,
+        ...(branch === undefined ? [] : [`Accepted prose must satisfy the branch writing contract: ${branch.authorIntent.writingContract.minHanChars}–${branch.authorIntent.writingContract.maxHanChars} Han characters in ${branch.authorIntent.writingContract.language}.`]),
         'Do not upgrade suspicion, hearsay, or reader knowledge into POV knowledge without evidence.',
         'Preserve character motivation and ideology even when that changes the expected canon plot.',
         'Use narrativeStyle as high-level work guidance; do not reproduce distinctive source phrasing or treat source samples as prose templates.',
@@ -471,10 +492,12 @@ export class LocalFanficProvider implements FanficProvider {
       workflow: [
         'Plan from canonTruth plus the bounded active branch working set and inspect contextExpansion for relevant entities the initial prompt omitted.',
         'Use canonReference only to understand what would have happened without divergence.',
-        'After the scene or chapter is accepted, persist new world state with fanfic_apply_delta.',
-        'Audit important knowledge, identity, canon-fact, and power claims before finalizing prose.',
-        'Before final prose, run fanfic_style_audit and anti_copy_guard; revise broad style drift without copying source wording.',
+        'Stage the complete prose once with fanfic_draft_stage; use its draftId for all audits and fanfic_apply_delta.',
+        'Audit important knowledge, identity, canon-fact, power, and mystery-reveal claims before finalizing prose.',
+        'Run fanfic_style_audit and anti_copy_guard on the staged draft; prose-quality or writing-contract failure cannot produce a commit receipt.',
+        'After all three receipts pass for the same staged draft, persist accepted world state with fanfic_apply_delta.',
       ],
+      telemetry: { serializedChars: 0, budgetChars: this.authorContextMaxJsonChars, compactionLevel: 0, omitted: { sourceExcerpts: 0, characterEvidence: 0, olderBranchRecords: 0, storyDirectorRecords: 0 } },
     }
     return compactAuthorContextToBudget(authorPacket, this.authorContextSourceExcerptLimit, this.authorContextMaxJsonChars)
   }
@@ -506,8 +529,7 @@ export class LocalFanficProvider implements FanficProvider {
     const terms = query.length === 0 ? [] : searchTerms(query)
     const rules = pack.timelineRules
       .filter(rule => rule.validFromChapter <= cutoff && (rule.validUntilChapter === undefined || cutoff <= rule.validUntilChapter))
-      .filter(rule => worldline.length === 0 || rule.worldline === undefined
-        || rule.worldline.includes(worldline) || worldline.includes(rule.worldline))
+      .filter(rule => worldline.length === 0 || rule.worldline === undefined || rule.worldline.includes(worldline) || worldline.includes(rule.worldline))
       .map(rule => ({ rule, score: terms.length === 0 ? 1 : scoreText(`${rule.worldline ?? ''} ${rule.rule} ${(rule.effects ?? []).join(' ')}`, terms) }))
       .filter(item => item.score > 0)
       .sort((a, b) => b.score - a.score || b.rule.validFromChapter - a.rule.validFromChapter)
@@ -529,9 +551,7 @@ export class LocalFanficProvider implements FanficProvider {
       .filter(edge => entities.length === 0 || entities.some(entity => sameName(entity, edge.subject) || sameName(entity, edge.object)))
       .slice(0, limit)
     const sourceQuery = `${worldline} ${query} ${entities.join(' ')}`.trim()
-    const sourceEvidence = sourceQuery.length === 0
-      ? []
-      : await this.search({ query: sourceQuery, asOfChapter: cutoff, limit: Math.min(limit, this.maxSearchResults) }, signal)
+    const sourceEvidence = sourceQuery.length === 0 ? [] : await this.search({ query: sourceQuery, asOfChapter: cutoff, limit: Math.min(limit, this.maxSearchResults) }, signal)
     return {
       asOfChapter: cutoff,
       ...(worldline.length === 0 ? {} : { worldline }),
@@ -561,13 +581,9 @@ export class LocalFanficProvider implements FanficProvider {
     const character = nonEmpty(request.character, 'character')
     const cutoff = cutoffChapter(request.asOfChapter, pack.chapters.length)
     const evidenceLimit = Math.min(positiveSafeInteger(request.evidenceLimit, 'evidenceLimit'), this.maxSearchResults)
-    const temporal = <T extends { readonly validFromChapter: number; readonly validUntilChapter?: number }>(
-      records: readonly T[],
-    ): T[] =>
-      records.filter(record => record.validFromChapter <= cutoff
-        && (record.validUntilChapter === undefined || cutoff <= record.validUntilChapter))
-    const facts = temporal(pack.facts
-      .filter(fact => sameName(fact.subject, character) || (fact.aliases ?? []).some(alias => sameName(alias, character))))
+    const temporal = <T extends { readonly validFromChapter: number; readonly validUntilChapter?: number }>(records: readonly T[]): T[] =>
+      records.filter(record => record.validFromChapter <= cutoff && (record.validUntilChapter === undefined || cutoff <= record.validUntilChapter))
+    const facts = temporal(pack.facts.filter(fact => sameName(fact.subject, character) || (fact.aliases ?? []).some(alias => sameName(alias, character))))
       .filter(fact => fact.revealFromChapter === undefined || fact.revealFromChapter <= cutoff)
       .slice(0, this.maxStructuredRecords)
     const visibleFactIds = new Set(pack.facts
@@ -579,16 +595,14 @@ export class LocalFanficProvider implements FanficProvider {
       .filter(record => visibleFactIds.has(record.factId))
       .filter(record => record.knownFromChapter <= cutoff && (record.knownUntilChapter === undefined || cutoff <= record.knownUntilChapter))
       .slice(0, this.maxStructuredRecords)
-    const states = temporal(pack.characters
-      .filter(state => sameName(state.name, character) || (state.aliases ?? []).some(alias => sameName(alias, character))))
+    const states = temporal(pack.characters.filter(state => sameName(state.name, character) || (state.aliases ?? []).some(alias => sameName(alias, character))))
       .slice(0, this.maxStructuredRecords)
     const identities = temporal(pack.identities.filter(edge => sameName(edge.subject, character) || sameName(edge.object, character)))
       .filter(edge => edge.revealFromChapter === undefined || edge.revealFromChapter <= cutoff)
       .slice(0, this.maxStructuredRecords)
     const powers = temporal(pack.powers.filter(power => sameName(power.subject, character)))
       .slice(0, this.maxStructuredRecords)
-    const relationships = temporal(pack.relationships
-      .filter(relation => sameName(relation.subject, character) || sameName(relation.object, character)))
+    const relationships = temporal(pack.relationships.filter(relation => sameName(relation.subject, character) || sameName(relation.object, character)))
       .slice(0, this.maxStructuredRecords)
     const storedBranch = request.branchId === undefined ? undefined : await this.getBranch(request.branchId, signal)
     const branch = storedBranch === undefined ? undefined : branchView(storedBranch, request.fanficChapter, true)
@@ -619,21 +633,12 @@ export class LocalFanficProvider implements FanficProvider {
       .filter(state => state.validFromChapter <= cutoff && (state.validUntilChapter === undefined || cutoff <= state.validUntilChapter))
       .filter(state => sameName(state.name, character) || (state.aliases ?? []).some(alias => sameName(alias, character)))
       .flatMap(state => state.voiceNotes ?? []))
-    const hits = await this.search(
-      { query: character, asOfChapter: cutoff, limit: Math.min(this.maxSearchResults, Math.max(limit * 2, limit)) },
-      signal,
-    )
+    const hits = await this.search({ query: character, asOfChapter: cutoff, limit: Math.min(this.maxSearchResults, Math.max(limit * 2, limit)) }, signal)
     const samples: CharacterVoiceSample[] = []
     for (const hit of hits) {
       const chapter = pack.chapters[hit.chapter - 1]
       if (chapter === undefined) continue
-      const sample = extractCharacterVoiceSample(
-        pack.source.sha256,
-        chapter,
-        character,
-        this.maxExcerptChars,
-        this.voiceDialogueFragmentLimit,
-      )
+      const sample = extractCharacterVoiceSample(pack.source.sha256, chapter, character, this.maxExcerptChars, this.voiceDialogueFragmentLimit)
       if (sample !== undefined) samples.push(sample)
       if (samples.length >= limit) break
     }
@@ -669,9 +674,7 @@ export class LocalFanficProvider implements FanficProvider {
       .map(row => ({ row, score: (row.modeScores[resolvedMode] ?? 0) * 10 + (queryScores.get(row.chapter) ?? 0) }))
       .sort((a, b) => b.score - a.score || b.row.chapter - a.row.chapter)
       .slice(0, Math.min(this.styleReferenceChapterLimit, cutoff))
-    const referenceRows = candidates.length > 0
-      ? candidates.map(item => item.row)
-      : pack.styleBank.chapterMetrics.filter(row => row.chapter <= cutoff).slice(-this.styleReferenceChapterLimit)
+    const referenceRows = candidates.length > 0 ? candidates.map(item => item.row) : pack.styleBank.chapterMetrics.filter(row => row.chapter <= cutoff).slice(-this.styleReferenceChapterLimit)
     const globalRows = pack.styleBank.chapterMetrics.filter(row => row.chapter <= cutoff)
     const referenceMetrics = aggregateNarrativeStyleMetrics(referenceRows.map(row => row.metrics))
     const globalMetrics = aggregateNarrativeStyleMetrics(globalRows.map(row => row.metrics))
@@ -712,20 +715,23 @@ export class LocalFanficProvider implements FanficProvider {
   async antiCopyGuard(request: AntiCopyGuardRequest, signal?: AbortSignal): Promise<AntiCopyGuardResult> {
     const pack = await this.load(signal)
     signal?.throwIfAborted()
+    const resolvedDraft = await this.resolveDraftInput(request, signal)
+    const stagedDraft = resolvedDraft.stagedDraft
+    const fanficChapter = stagedDraft?.fanficChapter ?? request.fanficChapter
+    const branch = await this.auditBranchForDraft(stagedDraft, request.branchId, fanficChapter, signal)
     const cutoff = cutoffChapter(request.asOfChapter, pack.chapters.length)
     const minPhraseChars = positiveSafeInteger(request.minPhraseChars, 'minPhraseChars')
     if (minPhraseChars < MIN_ANTI_COPY_PHRASE_CHARS) throw new Error(`minPhraseChars must be at least ${MIN_ANTI_COPY_PHRASE_CHARS}`)
     const maxFindings = Math.min(positiveSafeInteger(request.maxFindings, 'maxFindings'), this.antiCopyMaxFindings)
-    const draft = normalizeCopyText(request.draft)
+    const draft = normalizeCopyText(resolvedDraft.text)
     if (draft.length > this.antiCopyMaxDraftChars) throw new Error(`draft exceeds anti-copy limit of ${this.antiCopyMaxDraftChars} normalized characters`)
     const corpus = await this.copyCorpus(pack)
     signal?.throwIfAborted()
     const findings = findAntiCopyOverlaps(draft, corpus, cutoff, minPhraseChars, maxFindings)
     const ok = findings.length === 0
-    const branch = request.branchId === undefined ? undefined : await this.getBranch(request.branchId, signal)
-    const auditReceipt = branch === undefined || request.fanficChapter === undefined || !ok
+    const auditReceipt = branch === undefined || fanficChapter === undefined || stagedDraft === undefined || !ok
       ? undefined
-      : await this.issueAuditReceipt('anti-copy', request.draft, branch, request.fanficChapter, signal)
+      : await this.issueAuditReceipt('anti-copy', stagedDraft, branch, fanficChapter, [], signal)
     return {
       ok,
       ...(auditReceipt === undefined ? {} : { auditReceipt }),
@@ -735,35 +741,47 @@ export class LocalFanficProvider implements FanficProvider {
       cautions: [
         'This guard detects exact normalized phrase overlap; it does not detect close paraphrase or semantic imitation.',
         'Matches against source chapters after the spoiler cutoff are reported without revealing their chapter locations.',
-        'Short conventional phrases can recur naturally; use a conservative phrase threshold and revise distinctive long overlaps.',
+        'Commit receipts are issued only for staged drafts so the model never has to recopy accepted prose between audit tools.',
       ],
     }
   }
 
   async auditNarrativeStyle(request: NarrativeStyleAuditRequest, signal?: AbortSignal): Promise<NarrativeStyleAuditResult> {
     signal?.throwIfAborted()
-    const context = await this.narrativeStyleContext(request, signal)
-    const draftMetrics = measureNarrativeStyle(request.draft)
+    const resolvedDraft = await this.resolveDraftInput(request, signal)
+    const stagedDraft = resolvedDraft.stagedDraft
+    const fanficChapter = stagedDraft?.fanficChapter ?? request.fanficChapter
+    const branch = await this.auditBranchForDraft(stagedDraft, request.branchId, fanficChapter, signal)
+    const context = await this.narrativeStyleContext({
+      ...request,
+      ...(branch === undefined ? {} : { branchId: branch.id }),
+      ...(fanficChapter === undefined ? {} : { fanficChapter }),
+    }, signal)
+    const draftMetrics = measureNarrativeStyle(resolvedDraft.text)
     const deviations = narrativeStyleDeviations(draftMetrics, context.referenceMetrics, this.styleDeviationRatio)
       .map(item => styleDeviationWithSeverity(item, this.styleRevisionRequiredRatio))
+    const quality = assessProseQuality(resolvedDraft.text, {
+      ultraShortHanChars: this.proseQualityUltraShortHanChars,
+      maxUltraShortRun: this.proseQualityMaxUltraShortRun,
+      tailUltraShortRatio: this.proseQualityTailUltraShortRatio,
+      minBigramDiversity: this.proseQualityMinBigramDiversity,
+      tailFillerLimit: this.proseQualityTailFillerLimit,
+    })
     const antiCopy = await this.antiCopyGuard({
-      draft: request.draft,
+      ...(stagedDraft === undefined ? { draft: resolvedDraft.text } : { draftId: stagedDraft.id }),
       asOfChapter: request.asOfChapter,
-      ...(request.branchId === undefined ? {} : { branchId: request.branchId }),
-      ...(request.fanficChapter === undefined ? {} : { fanficChapter: request.fanficChapter }),
       minPhraseChars: request.antiCopyMinPhraseChars,
       maxFindings: request.antiCopyMaxFindings,
     }, signal)
-    const minHan = request.targetMinHanChars === undefined ? undefined : positiveSafeInteger(request.targetMinHanChars, 'targetMinHanChars')
-    const maxHan = request.targetMaxHanChars === undefined ? undefined : positiveSafeInteger(request.targetMaxHanChars, 'targetMaxHanChars')
+    const durableContract = branch?.authorIntent.writingContract
+    const minHan = durableContract?.minHanChars ?? (request.targetMinHanChars === undefined ? undefined : positiveSafeInteger(request.targetMinHanChars, 'targetMinHanChars'))
+    const maxHan = durableContract?.maxHanChars ?? (request.targetMaxHanChars === undefined ? undefined : positiveSafeInteger(request.targetMaxHanChars, 'targetMaxHanChars'))
     if (minHan !== undefined && maxHan !== undefined && maxHan < minHan) throw new Error('targetMaxHanChars must be >= targetMinHanChars')
-    const withinTarget = (minHan === undefined || draftMetrics.hanCharCount >= minHan)
-      && (maxHan === undefined || draftMetrics.hanCharCount <= maxHan)
-    const ok = antiCopy.ok && withinTarget && !deviations.some(item => item.severity === 'revision-required')
-    const branch = request.branchId === undefined ? undefined : await this.getBranch(request.branchId, signal)
-    const auditReceipt = branch === undefined || request.fanficChapter === undefined || !ok
+    const withinTarget = (minHan === undefined || draftMetrics.hanCharCount >= minHan) && (maxHan === undefined || draftMetrics.hanCharCount <= maxHan)
+    const ok = antiCopy.ok && quality.ok && withinTarget && !deviations.some(item => item.severity === 'revision-required')
+    const auditReceipt = branch === undefined || fanficChapter === undefined || stagedDraft === undefined || !ok
       ? undefined
-      : await this.issueAuditReceipt('style', request.draft, branch, request.fanficChapter, signal)
+      : await this.issueAuditReceipt('style', stagedDraft, branch, fanficChapter, [], signal)
     return {
       ok,
       ...(auditReceipt === undefined ? {} : { auditReceipt }),
@@ -771,21 +789,18 @@ export class LocalFanficProvider implements FanficProvider {
       draftMetrics,
       referenceMetrics: context.referenceMetrics,
       deviations,
+      quality,
       antiCopy,
-      lengthContract: {
-        actualHanChars: draftMetrics.hanCharCount,
-        ...(minHan === undefined ? {} : { minHanChars: minHan }),
-        ...(maxHan === undefined ? {} : { maxHanChars: maxHan }),
-        withinTarget,
-      },
+      lengthContract: { actualHanChars: draftMetrics.hanCharCount, ...(minHan === undefined ? {} : { minHanChars: minHan }), ...(maxHan === undefined ? {} : { maxHanChars: maxHan }), withinTarget },
       revisionGuidance: [
         ...context.guidance,
         ...deviations.map(styleDeviationGuidance),
-        ...(withinTarget ? [] : [`Adjust chapter length to the requested Han-character range; current count is ${draftMetrics.hanCharCount}.`]),
+        ...quality.findings.map(item => item.message),
+        ...(withinTarget ? [] : [`Adjust chapter length to the branch writing contract; current Han-character count is ${draftMetrics.hanCharCount}.`]),
         ...(antiCopy.ok ? [] : ['Rewrite exact source-overlap regions in fresh wording while preserving only the underlying story information.']),
       ],
       limitations: [
-        'Quantitative drift warnings are broad diagnostics, not a quality score and not proof that prose is in or out of character.',
+        'Style similarity and prose-quality checks are separate: a draft may match reference rhythm yet still fail repetition/degeneration checks.',
         'The audit intentionally targets high-level conventions rather than exact imitation of a living author.',
         'Character voice still requires character_voice_context and canon/epistemic correctness still requires fanfic_audit.',
       ],
@@ -816,9 +831,7 @@ export class LocalFanficProvider implements FanficProvider {
     const timelineRules = pack.timelineRules
       .filter(rule => rule.validFromChapter <= cutoff && (rule.validUntilChapter === undefined || cutoff <= rule.validUntilChapter))
       .slice(0, this.maxStructuredRecords)
-    const hasActorConstraints = assessments.some(actor => actor.powers.length > 0
-      || actor.states.some(state => state.realm !== undefined
-        || (state.techniques?.length ?? 0) > 0 || (state.possessions?.length ?? 0) > 0))
+    const hasActorConstraints = assessments.some(actor => actor.powers.length > 0 || actor.states.some(state => state.realm !== undefined || (state.techniques?.length ?? 0) > 0 || (state.possessions?.length ?? 0) > 0))
     return {
       asOfChapter: cutoff, scenario: request.scenario?.trim() ?? '', actors: assessments, systemRules, timelineRules,
       verdict: hasActorConstraints ? 'constraints-found' : 'insufficient-structured-data',
@@ -893,10 +906,7 @@ export class LocalFanficProvider implements FanficProvider {
       if (request.token !== validation.token) throw new Error('canon enrichment validation token does not match candidate/source evidence')
       const pack = await this.load(signal)
       const candidate = normalizeEnrichmentCandidate(request.candidate, pack.chapters.length)
-      const chapter = pack.chapters[candidate.chapter - 1]
-      if (chapter === undefined) {
-        throw new Error(`cannot resolve enrichment source chapter ${candidate.chapter}`)
-      }
+      const chapter = pack.chapters[candidate.chapter - 1]!
       const provenanceRecord = provenanceWithExcerpt(pack.source.sha256, chapter, candidate.evidence)
       const materialized = materializeEnrichmentRecord(candidate, provenanceRecord)
       const id = enrichmentRecordId(materialized)
@@ -930,10 +940,7 @@ export class LocalFanficProvider implements FanficProvider {
       const pendingKinds = kinds.filter(kind => !effective.has(coverageKey(chapterNumber, kind)))
       remainingUnits += pendingKinds.length
       if (pendingKinds.length === 0 || work.length >= batchSize) continue
-      const chapter = pack.chapters[chapterNumber - 1]
-      if (chapter === undefined) {
-        throw new Error(`cannot resolve enrichment source chapter ${chapterNumber}`)
-      }
+      const chapter = pack.chapters[chapterNumber - 1]!
       const existingRecordIds: Record<string, readonly string[]> = {}
       for (const kind of pendingKinds) {
         existingRecordIds[kind] = recordsForKind(pack, kind)
@@ -997,10 +1004,7 @@ export class LocalFanficProvider implements FanficProvider {
           throw new Error(`enrichment checkpoint record ${JSON.stringify(id)} is sourced from chapter ${sourceChapterNumber ?? 'unknown'}, not chapter ${chapterNumber}`)
         }
       }
-      const chapter = pack.chapters[chapterNumber - 1]
-      if (chapter === undefined) {
-        throw new Error(`cannot resolve enrichment source chapter ${chapterNumber}`)
-      }
+      const chapter = pack.chapters[chapterNumber - 1]!
       const checkpoint: CanonEnrichmentCoverage = {
         chapter: chapterNumber, kind, sourceSha256: pack.source.sha256, chapterSha256: chapter.sha256,
         recordIds, noFindings, notes: request.notes.trim(), updatedAt: new Date().toISOString(),
@@ -1036,7 +1040,7 @@ export class LocalFanficProvider implements FanficProvider {
     if (existing.some(branch => branch.name === name)) throw new Error(`fanfic branch name must be unique: ${JSON.stringify(name)}`)
     const now = new Date().toISOString()
     const branch: FanficBranch = {
-      version: 2,
+      version: 3,
       id: FanficBranchId(`fanfic-${randomUUID()}`),
       name,
       baseChapter: cutoffChapter(request.baseChapter, pack.chapters.length),
@@ -1151,8 +1155,7 @@ export class LocalFanficProvider implements FanficProvider {
     return this.withBranchLock(request.branchId, async () => {
       const branch = await this.getBranch(request.branchId, signal); assertRevision(branch, request.expectedRevision)
       const nextDirector = normalizeStoryDirector({ ...branch.storyDirector, horizon: request.horizon })
-      const now = new Date().toISOString()
-      const next = { ...branch, revision: branch.revision + 1, updatedAt: now, storyDirector: nextDirector }
+      const now = new Date().toISOString(); const next = { ...branch, revision: branch.revision + 1, updatedAt: now, storyDirector: nextDirector }
       await this.writeBranch(next, signal); return next
     })
   }
@@ -1165,11 +1168,7 @@ export class LocalFanficProvider implements FanficProvider {
     return this.updateDirectorPart(request.branchId, request.expectedRevision, 'inventions', parseInvention(request.invention, 'invention'), signal)
   }
 
-  async resolveDirectorReconciliation(request: {
-    readonly branchId: FanficBranchIdValue
-    readonly expectedRevision: number
-    readonly reconciliationId: string
-  }, signal?: AbortSignal): Promise<FanficBranch> {
+  async resolveDirectorReconciliation(request: { readonly branchId: FanficBranchIdValue; readonly expectedRevision: number; readonly reconciliationId: string }, signal?: AbortSignal): Promise<FanficBranch> {
     return this.withBranchLock(request.branchId, async () => {
       const branch = await this.getBranch(request.branchId, signal); assertRevision(branch, request.expectedRevision)
       const id = nonEmpty(request.reconciliationId, 'reconciliationId')
@@ -1177,15 +1176,7 @@ export class LocalFanficProvider implements FanficProvider {
       if (target === undefined) throw new Error(`Story Director reconciliation does not exist: ${JSON.stringify(id)}`)
       if (target.status === 'resolved') return branch
       const now = new Date().toISOString()
-      const next: FanficBranch = {
-        ...branch,
-        revision: branch.revision + 1,
-        updatedAt: now,
-        storyDirector: {
-          ...branch.storyDirector,
-          reconciliation: branch.storyDirector.reconciliation.map(item => item.id === id ? { ...item, status: 'resolved' as const, resolvedAt: now } : item),
-        },
-      }
+      const next: FanficBranch = { ...branch, revision: branch.revision + 1, updatedAt: now, storyDirector: { ...branch.storyDirector, reconciliation: branch.storyDirector.reconciliation.map(item => item.id === id ? { ...item, status: 'resolved' as const, resolvedAt: now } : item) } }
       await this.writeBranch(next, signal); return next
     })
   }
@@ -1198,8 +1189,7 @@ export class LocalFanficProvider implements FanficProvider {
       const rows = branch.storyDirector[key] as readonly { readonly id: string }[]
       const nextRows = [...rows.filter(item => item.id !== (value as { readonly id: string }).id), value]
       const nextDirector = normalizeStoryDirector({ ...branch.storyDirector, [key]: nextRows })
-      const now = new Date().toISOString()
-      const next = { ...branch, revision: branch.revision + 1, updatedAt: now, storyDirector: nextDirector }
+      const now = new Date().toISOString(); const next = { ...branch, revision: branch.revision + 1, updatedAt: now, storyDirector: nextDirector }
       await this.writeBranch(next, signal); return next
     })
   }
@@ -1256,14 +1246,8 @@ export class LocalFanficProvider implements FanficProvider {
     }
     return {
       branchId: branch.id, revision: branch.revision, fanficChapter, activeArcs, activeThreads, dueThreads,
-      liveForeshadows,
-      mysteryTruths: director.mysteryTruths,
-      inventions: director.inventions,
-      horizon,
-      recentChapterSummaries,
-      unresolvedCausalThreads,
+      liveForeshadows, mysteryTruths: director.mysteryTruths, inventions: director.inventions, horizon, recentChapterSummaries, unresolvedCausalThreads, attention,
       reconciliation: director.reconciliation.filter(item => item.status === 'open'),
-      attention,
       cautions: [
         'Story Director state is author metadata, not in-world truth or character knowledge.',
         'Planned beats are intentions, not immutable events; recompute them when divergence consequences or character logic change.',
@@ -1272,14 +1256,66 @@ export class LocalFanficProvider implements FanficProvider {
     }
   }
 
+  async stageDraft(request: StageFanficDraftRequest, signal?: AbortSignal): Promise<FanficDraft> {
+    const branch = await this.getBranch(request.branchId, signal)
+    const fanficChapter = positiveSafeInteger(request.fanficChapter, 'fanficChapter')
+    const text = nonEmpty(request.text, 'text')
+    const now = new Date().toISOString()
+    const draft: FanficDraft = {
+      id: `draft-${randomUUID()}`,
+      branchId: branch.id,
+      fanficChapter,
+      branchRevision: branch.revision,
+      draftRevision: 1,
+      text,
+      draftHash: draftHash(text),
+      createdAt: now,
+      updatedAt: now,
+    }
+    await mkdir(this.draftsDir, { recursive: true })
+    await writeFile(this.draftPath(draft.id), `${JSON.stringify(draft, null, 2)}\n`, { encoding: 'utf8', signal })
+    return draft
+  }
+
+  async updateDraft(request: UpdateFanficDraftRequest, signal?: AbortSignal): Promise<FanficDraft> {
+    const draft = await this.getDraft(request.draftId, signal)
+    const branch = await this.getBranch(draft.branchId, signal)
+    if (branch.revision !== draft.branchRevision) {
+      throw new Error(`staged draft ${draft.id} belongs to branch revision ${draft.branchRevision}, current revision is ${branch.revision}; stage a fresh draft after branch mutations`)
+    }
+    const expected = positiveSafeInteger(request.expectedDraftRevision, 'expectedDraftRevision')
+    if (draft.draftRevision !== expected) throw new Error(`fanfic draft revision conflict: expected ${expected}, current ${draft.draftRevision}`)
+    const text = nonEmpty(request.text, 'text')
+    const next: FanficDraft = {
+      ...draft,
+      draftRevision: draft.draftRevision + 1,
+      text,
+      draftHash: draftHash(text),
+      updatedAt: new Date().toISOString(),
+    }
+    await writeFile(this.draftPath(next.id), `${JSON.stringify(next, null, 2)}\n`, { encoding: 'utf8', signal })
+    return next
+  }
+
+  async getDraft(draftId: string, signal?: AbortSignal): Promise<FanficDraft> {
+    const id = validateDraftId(draftId)
+    await mkdir(this.draftsDir, { recursive: true })
+    let raw: string
+    try { raw = await readFile(this.draftPath(id), { encoding: 'utf8', signal }) }
+    catch (error) { if (isNodeError(error) && error.code === 'ENOENT') throw new Error(`fanfic draft does not exist: ${JSON.stringify(id)}`); throw error }
+    return parseDraft(JSON.parse(raw), 'draft')
+  }
+
   async applyDelta(request: ApplyFanficDeltaRequest, signal?: AbortSignal): Promise<FanficBranch> {
     return this.withBranchLock(request.branchId, async () => {
       const branch = await this.getBranch(request.branchId, signal)
       assertRevision(branch, request.expectedRevision)
       const delta = normalizeDelta(request.delta)
       assertDeltaChapterAlignment(delta)
-      const draft = nonEmpty(request.draft, 'draft')
-      const receipts = await this.verifyAuditReceipts(request.auditReceiptIds, draft, branch, delta.fanficChapter, signal)
+      const stagedDraft = await this.getDraft(request.draftId, signal)
+      if (stagedDraft.branchId !== branch.id || stagedDraft.fanficChapter !== delta.fanficChapter) throw new Error('staged draft belongs to a different branch/chapter')
+      if (stagedDraft.branchRevision !== branch.revision) throw new Error(`staged draft was created at branch revision ${stagedDraft.branchRevision}, current revision is ${branch.revision}; stage a fresh draft`)
+      const receipts = await this.verifyAuditReceipts(request.auditReceiptIds, stagedDraft, branch, delta.fanficChapter, signal)
       const now = new Date().toISOString()
       const chapterVersionId = `chapter-${delta.fanficChapter}-${randomUUID()}`
       const previousActive = branch.chapterVersions.filter(version => version.fanficChapter === delta.fanficChapter && version.status === 'active')
@@ -1291,19 +1327,11 @@ export class LocalFanficProvider implements FanficProvider {
       }
       if (previousVersion !== undefined && request.rewriteMode === undefined) throw new Error('rewriteMode is required when accepting a new version of an existing fanfic chapter')
       if (previousVersion === undefined && request.rewriteMode !== undefined) throw new Error('rewriteMode is only valid when the fanfic chapter already has an active version')
-      const rewriteMode = request.rewriteMode === undefined ? 'initial' as const : request.rewriteMode
+      const rewriteMode = previousVersion === undefined ? 'initial' as const : request.rewriteMode!
       const dropIds = new Set(uniqueStrings(request.dropInheritedRecordIds ?? []))
       const previousRecords = previousVersion === undefined ? emptyChapterRecordSet() : chapterRecords(branch, previousVersion.id)
-      const previousRecordIds = new Set([
-        ...previousRecords.facts,
-        ...previousRecords.knowledge,
-        ...previousRecords.characterStates,
-        ...previousRecords.relationships,
-        ...previousRecords.causalThreads,
-      ].map(item => item.id))
-      for (const id of dropIds) {
-        if (!previousRecordIds.has(id)) throw new Error(`dropInheritedRecordIds contains record not owned by the active chapter version: ${JSON.stringify(id)}`)
-      }
+      const previousRecordIds = new Set([...previousRecords.facts, ...previousRecords.knowledge, ...previousRecords.characterStates, ...previousRecords.relationships, ...previousRecords.causalThreads].map(item => item.id))
+      for (const id of dropIds) if (!previousRecordIds.has(id)) throw new Error(`dropInheritedRecordIds contains record not owned by the active chapter version: ${JSON.stringify(id)}`)
       if (rewriteMode === 'replace' && totalRecordCount(previousRecords) > 0 && request.confirmDroppedState !== true) {
         throw new Error(`replace rewrite would discard active structured state; retry with confirmDroppedState=true after reviewing dropped counts ${JSON.stringify(chapterRecordCounts(previousRecords))}`)
       }
@@ -1320,13 +1348,13 @@ export class LocalFanficProvider implements FanficProvider {
         ...item, id: `cause-${randomUUID()}`, originFanficChapter: delta.fanficChapter, originChapterVersionId: chapterVersionId,
         recordedAt: now, ...(item.status === 'resolved' ? { resolvedAt: now } : {}),
       }))
-      const inheritedResolved = rewriteMode === 'inherit' && previousVersion !== undefined
-        ? previousVersion.resolvedCausalThreadIds.map(id => inherited.causalIdMap.get(id) ?? id)
-        : []
+      const inheritedResolved = rewriteMode === 'inherit' && previousVersion !== undefined ? previousVersion.resolvedCausalThreadIds.map(id => inherited.causalIdMap.get(id) ?? id) : []
       const version: FanficChapterVersion = {
         id: chapterVersionId, fanficChapter: delta.fanficChapter, status: 'active', rewriteMode,
         ...(previousVersion === undefined ? {} : { replacesVersionId: previousVersion.id }),
         resolvedCausalThreadIds: uniqueStrings([...inheritedResolved, ...resolveThreadIds, ...newCausalThreads.filter(item => item.status === 'resolved').map(item => item.id)]),
+        draftId: stagedDraft.id,
+        draftHash: stagedDraft.draftHash,
         createdAt: now,
       }
       const chapterVersions: FanficChapterVersion[] = [
@@ -1336,7 +1364,19 @@ export class LocalFanficProvider implements FanficProvider {
         version,
       ]
       const currentPlan = branch.storyDirector.horizon.find(plan => plan.fanficChapter === delta.fanficChapter)
-      const foreshadows = branch.storyDirector.foreshadows.map((item) => {
+      const canonReceipt = receipts.find(item => item.kind === 'canon')
+      const authorizedMysteryRevealIds = new Set(canonReceipt?.authorizedMysteryRevealIds ?? [])
+      for (const payoffId of currentPlan?.payoffForeshadows ?? []) {
+        const foreshadow = branch.storyDirector.foreshadows.find(item => item.id === payoffId)
+        if (foreshadow === undefined) continue
+        const relatedMysteries = branch.storyDirector.mysteryTruths.filter(truth => truth.status !== 'revealed' && truth.status !== 'retired'
+          && truth.relatedThreads.some(threadId => foreshadow.relatedThreads.includes(threadId)))
+        const unauthorized = relatedMysteries.filter(truth => !authorizedMysteryRevealIds.has(truth.id))
+        if (unauthorized.length > 0) {
+          throw new Error(`mystery payoff ${JSON.stringify(payoffId)} is not authorized by the canon audit receipt; satisfy and declare reveal conditions for ${unauthorized.map(item => item.id).join(', ')}`)
+        }
+      }
+      const foreshadows = branch.storyDirector.foreshadows.map(item => {
         if (currentPlan?.payoffForeshadows.includes(item.id)) return { ...item, status: 'paid-off' as const, payoffFanficChapter: delta.fanficChapter }
         if (currentPlan?.plantForeshadows.includes(item.id) && item.status === 'planned') return { ...item, status: 'planted' as const, plantedFanficChapter: delta.fanficChapter }
         return item
@@ -1355,20 +1395,17 @@ export class LocalFanficProvider implements FanficProvider {
       const storyDirector: FanficStoryDirectorState = {
         ...branch.storyDirector,
         foreshadows,
+        mysteryTruths: branch.storyDirector.mysteryTruths.map(item => authorizedMysteryRevealIds.has(item.id) ? { ...item, status: 'revealed' as const } : item),
         reconciliation,
         horizon: branch.storyDirector.horizon.map(plan => plan.fanficChapter === delta.fanficChapter ? { ...plan, status: 'accepted' as const } : plan),
       }
       const inheritedSummary = rewriteMode === 'inherit' && previousVersion !== undefined
         ? branch.chapterSummaries.find(item => item.chapterVersionId === previousVersion.id)?.summary
         : undefined
-      const chapterSummary = delta.chapterSummary ?? inheritedSummary
-      const causalThreads = materializeCausalThreadStatus(
-        [...branch.causalThreads, ...inherited.causalThreads, ...newCausalThreads],
-        chapterVersions,
-      )
+      const causalThreads = materializeCausalThreadStatus([...branch.causalThreads, ...inherited.causalThreads, ...newCausalThreads], chapterVersions)
       const next: FanficBranch = {
         ...branch,
-        version: 2,
+        version: 3,
         revision: branch.revision + 1,
         updatedAt: now,
         storyDirector,
@@ -1378,14 +1415,9 @@ export class LocalFanficProvider implements FanficProvider {
         characterStates: [...branch.characterStates, ...inherited.characterStates, ...(delta.characterStates ?? []).map(item => ({ ...item, id: `char-${randomUUID()}`, originFanficChapter: delta.fanficChapter, originChapterVersionId: chapterVersionId, recordedAt: now }))],
         relationships: [...branch.relationships, ...inherited.relationships, ...(delta.relationships ?? []).map(item => ({ ...item, id: `rel-${randomUUID()}`, originFanficChapter: delta.fanficChapter, originChapterVersionId: chapterVersionId, recordedAt: now }))],
         causalThreads,
-        chapterSummaries: chapterSummary === undefined
+        chapterSummaries: (delta.chapterSummary ?? inheritedSummary) === undefined
           ? branch.chapterSummaries
-          : [...branch.chapterSummaries, {
-            fanficChapter: delta.fanficChapter,
-            chapterVersionId,
-            summary: chapterSummary,
-            recordedAt: now,
-          }],
+          : [...branch.chapterSummaries, { fanficChapter: delta.fanficChapter, chapterVersionId, summary: (delta.chapterSummary ?? inheritedSummary)!, recordedAt: now }],
       }
       await this.writeBranch(next, signal)
       await this.consumeAuditReceipts(receipts, signal)
@@ -1396,32 +1428,26 @@ export class LocalFanficProvider implements FanficProvider {
   async audit(request: FanficAuditRequest, signal?: AbortSignal): Promise<FanficAuditResult> {
     const pack = await this.load(signal)
     const requestedCutoff = cutoffChapter(request.asOfChapter, pack.chapters.length)
-    const draft = request.draft.trim()
+    const resolvedDraft = await this.resolveDraftInput(request, signal)
+    const stagedDraft = resolvedDraft.stagedDraft
+    const fanficChapter = stagedDraft?.fanficChapter ?? request.fanficChapter
+    const draft = resolvedDraft.text.trim()
     const issues: FanficAuditIssue[] = []
     if (draft.length === 0) issues.push({ severity: 'error', code: 'EMPTY_DRAFT', message: 'Draft is empty.' })
 
-    const storedBranch = request.branchId === undefined ? undefined : await this.getBranch(request.branchId, signal)
-    const branch = storedBranch === undefined ? undefined : branchView(storedBranch, request.fanficChapter, true)
+    const storedBranch = await this.auditBranchForDraft(stagedDraft, request.branchId, fanficChapter, signal)
+    const branch = storedBranch === undefined ? undefined : branchView(storedBranch, fanficChapter, true)
     const divergence = storedBranch === undefined ? undefined : earliestDivergencePoint(storedBranch)
     const stableCutoff = divergence === undefined || divergence.atChapter > requestedCutoff
       ? requestedCutoff
       : Math.max(1, Math.min(requestedCutoff, divergence.atChapter - 1))
-    const sameChapterTruth = divergence !== undefined
-      && divergence.atChapter <= requestedCutoff
-      && preciseDivergenceBoundary(divergence) !== undefined
-      ? await this.sameChapterTruthBeforeDivergence(
-        pack,
-        divergence,
-        { povCharacter: request.povCharacter, entities: uniqueStrings([request.povCharacter, ...(request.participants ?? [])]) },
-        signal,
-      )
+    const sameChapterTruth = divergence !== undefined && divergence.atChapter <= requestedCutoff && preciseDivergenceBoundary(divergence) !== undefined
+      ? await this.sameChapterTruthBeforeDivergence(pack, divergence, { povCharacter: request.povCharacter, entities: uniqueStrings([request.povCharacter, ...(request.participants ?? [])]) }, signal)
       : undefined
     const counterfactualCanon = stableCutoff < requestedCutoff
 
     for (const mystery of pack.mysteries) {
-      const revealedBeforeBoundary = sameChapterTruth !== undefined
-        && mystery.provenance !== undefined
-        && sameChapterTruth.mysteries.some(item => item.id === mystery.id)
+      const revealedBeforeBoundary = sameChapterTruth !== undefined && mystery.provenance !== undefined && sameChapterTruth.mysteries.some(item => item.id === mystery.id)
       if (stableCutoff >= mystery.revealChapter || revealedBeforeBoundary) continue
       for (const term of mystery.forbiddenBeforeReveal ?? []) {
         if (term.length === 0 || !draft.includes(term)) continue
@@ -1443,6 +1469,57 @@ export class LocalFanficProvider implements FanficProvider {
       }
     }
 
+    const mysteryDeclarations = normalizeMysteryRevealDeclarations(request.mysteryReveals ?? [])
+    const authorizedMysteryRevealIds: string[] = []
+    if (storedBranch !== undefined) {
+      const truthById = new Map(storedBranch.storyDirector.mysteryTruths.map(item => [item.id, item]))
+      for (const declaration of mysteryDeclarations) {
+        const truth = truthById.get(declaration.mysteryId)
+        if (truth === undefined) {
+          issues.push({ severity: 'error', code: 'MYSTERY_REVEAL_UNKNOWN', message: `Mystery reveal declaration references unknown author truth ${JSON.stringify(declaration.mysteryId)}.` })
+          continue
+        }
+        const invalidConditions = declaration.satisfiedConditions.filter(item => !truth.revealConditions.includes(item))
+        if (invalidConditions.length > 0) {
+          issues.push({ severity: 'error', code: 'MYSTERY_REVEAL_CONDITION_UNKNOWN', message: `Mystery ${truth.id} declaration names conditions not present in its revealConditions: ${invalidConditions.join('; ')}` })
+          continue
+        }
+        const missingEvidence = declaration.conditionEvidence.filter(item => !draft.includes(item))
+        if (missingEvidence.length > 0) {
+          issues.push({ severity: 'error', code: 'MYSTERY_REVEAL_EVIDENCE_NOT_IN_DRAFT', message: `Mystery ${truth.id} reveal evidence is not an exact excerpt of the staged draft: ${missingEvidence.map(item => JSON.stringify(item)).join(', ')}` })
+          continue
+        }
+        if (declaration.level === 'truth') {
+          if (truth.revealConditions.length > 0 && declaration.satisfiedConditions.length === 0) {
+            issues.push({ severity: 'error', code: 'MYSTERY_REVEAL_CONDITION_NOT_MET', message: `Full reveal of mystery ${truth.id} requires at least one declared satisfied reveal condition.` })
+          } else if (truth.revealConditions.length > 0 && declaration.conditionEvidence.length === 0) {
+            issues.push({ severity: 'error', code: 'MYSTERY_REVEAL_EVIDENCE_REQUIRED', message: `Full reveal of mystery ${truth.id} requires exact staged-draft evidence for the declared reveal condition.` })
+          } else {
+            authorizedMysteryRevealIds.push(truth.id)
+          }
+        }
+      }
+      for (const truth of storedBranch.storyDirector.mysteryTruths) {
+        if (truth.status === 'revealed' || truth.status === 'retired') continue
+        const protectedTerms = truth.protectedRevealTerms.filter(term => term.length > 0 && draft.includes(term))
+        if (protectedTerms.length === 0) continue
+        const declaration = mysteryDeclarations.find(item => item.mysteryId === truth.id)
+        if (declaration === undefined) {
+          issues.push({
+            severity: 'error',
+            code: 'MYSTERY_REVEAL_UNDECLARED',
+            message: `Draft exposes protected author-truth term(s) for mystery ${truth.id} without a reveal declaration: ${protectedTerms.map(term => JSON.stringify(term)).join(', ')}`,
+          })
+        } else if (declaration.level !== 'truth') {
+          issues.push({
+            severity: 'error',
+            code: 'MYSTERY_REVEAL_LEVEL_TOO_LOW',
+            message: `Draft exposes protected author-truth term(s) for mystery ${truth.id}; declare a full truth reveal and satisfy its reveal condition before using them.`,
+          })
+        }
+      }
+    }
+
     const snapshotBase = await this.snapshotFromPack(pack, {
       asOfChapter: stableCutoff,
       povCharacter: request.povCharacter,
@@ -1451,12 +1528,8 @@ export class LocalFanficProvider implements FanficProvider {
       searchLimit: 1,
     }, signal)
     const snapshot = sameChapterTruth === undefined ? snapshotBase : mergeAuditSnapshots(snapshotBase, sameChapterTruth)
-    const extractedClaims = extractDraftClaims(
-      draft,
-      uniqueStrings([request.povCharacter, ...(request.participants ?? []), ...snapshot.characterStates.map(item => item.name)]),
-    )
-    const uncoveredRiskyClaims = extractedClaims
-      .filter(extracted => !request.claims.some(submitted => auditClaimCovers(submitted, extracted)))
+    const extractedClaims = extractDraftClaims(draft, uniqueStrings([request.povCharacter, ...(request.participants ?? []), ...snapshot.characterStates.map(item => item.name)]))
+    const uncoveredRiskyClaims = extractedClaims.filter(extracted => !request.claims.some(submitted => auditClaimCovers(submitted, extracted)))
     for (const claim of request.claims) {
       const issue = validateClaim(claim, snapshot, pack, stableCutoff, requestedCutoff, branch, request.povCharacter)
       if (issue !== undefined) issues.push(issue)
@@ -1469,17 +1542,13 @@ export class LocalFanficProvider implements FanficProvider {
         claim,
       })
       const issue = validateClaim(claim, snapshot, pack, stableCutoff, requestedCutoff, branch, request.povCharacter)
-      if (issue !== undefined
-        && !issues.some(existing => existing.code === issue.code
-          && existing.claim?.subject === claim.subject && existing.claim?.object === claim.object)) {
-        issues.push(issue)
-      }
+      if (issue !== undefined && !issues.some(existing => existing.code === issue.code && existing.claim?.subject === claim.subject && existing.claim?.object === claim.object)) issues.push(issue)
     }
 
     const ok = !issues.some(issue => issue.severity === 'error')
-    const auditReceipt = storedBranch === undefined || request.fanficChapter === undefined || !ok
+    const auditReceipt = storedBranch === undefined || fanficChapter === undefined || stagedDraft === undefined || !ok
       ? undefined
-      : await this.issueAuditReceipt('canon', draft, storedBranch, request.fanficChapter, signal)
+      : await this.issueAuditReceipt('canon', stagedDraft, storedBranch, fanficChapter, authorizedMysteryRevealIds, signal)
     return {
       ok,
       ...(auditReceipt === undefined ? {} : { auditReceipt }),
@@ -1488,8 +1557,9 @@ export class LocalFanficProvider implements FanficProvider {
         extractedClaims, submittedClaims: request.claims, uncoveredRiskyClaims,
         coveredCount: extractedClaims.length - uncoveredRiskyClaims.length, extractedCount: extractedClaims.length,
       },
+      authorizedMysteryRevealIds: uniqueStrings(authorizedMysteryRevealIds),
       limitations: [
-        'This canon audit does not judge narrative style or character voice; use fanfic_style_audit and character_voice_context for those checks.',
+        'Mystery Reveal Guard enforces declared protected terms and branch reveal conditions; it cannot prove that a natural-language condition actually occurred unless branch state or the model declaration records it.',
         'A missing structured canon record is not proof that a claim is false; inspect source evidence when the graph is incomplete.',
         ...(counterfactualCanon ? ['Canon after the branch divergence is counterfactual reference and cannot establish branch facts or POV knowledge by itself.'] : []),
         'Causal plausibility after divergence still requires model reasoning over the branch state and canon reference.',
@@ -1511,10 +1581,7 @@ export class LocalFanficProvider implements FanficProvider {
     const chapters = await readNdjson(join(this.canonPackDir, 'chapters.ndjson'), parseChapter)
     if (chapters.length === 0) throw new Error('fanfic canon pack contains no narrative chapters')
     for (let index = 0; index < chapters.length; index++) {
-      const chapter = chapters[index]
-      if (chapter === undefined || chapter.index !== index + 1) {
-        throw new Error(`canon chapters must be contiguous from 1; got ${chapter?.index ?? 'missing'} at row ${index + 1}`)
-      }
+      if (chapters[index]!.index !== index + 1) throw new Error(`canon chapters must be contiguous from 1; got ${chapters[index]!.index} at row ${index + 1}`)
     }
     if (source.chapterCount !== chapters.length) {
       throw new Error(`source chapterCount ${source.chapterCount} does not match chapters.ndjson ${chapters.length}`)
@@ -1556,11 +1623,9 @@ export class LocalFanficProvider implements FanficProvider {
     signal?.throwIfAborted()
     const cutoff = cutoffChapter(request.asOfChapter, pack.chapters.length)
     const names = uniqueStrings([request.povCharacter ?? '', ...(request.entities ?? [])]).filter(Boolean)
-    const matches = (values: readonly string[]): boolean =>
-      names.length === 0 || values.some(value => names.some(name => sameName(value, name)))
+    const matches = (values: readonly string[]): boolean => names.length === 0 || values.some(value => names.some(name => sameName(value, name)))
     const temporal = <T extends { readonly validFromChapter: number; readonly validUntilChapter?: number }>(records: readonly T[]): T[] =>
-      records.filter(record => record.validFromChapter <= cutoff
-        && (record.validUntilChapter === undefined || cutoff <= record.validUntilChapter))
+      records.filter(record => record.validFromChapter <= cutoff && (record.validUntilChapter === undefined || cutoff <= record.validUntilChapter))
         .slice(0, this.maxStructuredRecords)
     const facts = temporal(pack.facts.filter(fact => matches([fact.subject, ...(fact.aliases ?? [])])))
       .filter(fact => fact.revealFromChapter === undefined || fact.revealFromChapter <= cutoff)
@@ -1570,9 +1635,8 @@ export class LocalFanficProvider implements FanficProvider {
     const powers = temporal(pack.powers.filter(power => power.subject === '修炼体系' || matches([power.subject])))
     const relationships = temporal(pack.relationships.filter(relationship => matches([relationship.subject, relationship.object])))
     const visibleFactIds = new Set(facts.map(fact => fact.id))
-    const pov = request.povCharacter
-    const povKnowledge = pov === undefined ? [] : pack.knowledge
-      .filter(record => sameName(record.character, pov))
+    const povKnowledge = request.povCharacter === undefined ? [] : pack.knowledge
+      .filter(record => sameName(record.character, request.povCharacter!))
       .filter(record => visibleFactIds.has(record.factId))
       .filter(record => record.knownFromChapter <= cutoff && (record.knownUntilChapter === undefined || cutoff <= record.knownUntilChapter))
       .slice(0, this.maxStructuredRecords)
@@ -1615,12 +1679,8 @@ export class LocalFanficProvider implements FanficProvider {
     const full = await this.snapshotFromPack(pack, {
       asOfChapter: divergence.atChapter, povCharacter: request.povCharacter, entities: request.entities, query: '', searchLimit: 1,
     }, signal)
-    const provenanceBefore = (provenance: CanonProvenance | undefined): boolean =>
-      provenance?.chapter === divergence.atChapter
-      && provenance.eventOrdinal !== undefined && provenance.eventOrdinal <= boundary
-    const events = full.events
-      .filter(event => event.chapter === divergence.atChapter
-        && event.orderInChapter !== undefined && event.orderInChapter <= boundary)
+    const provenanceBefore = (provenance: CanonProvenance | undefined): boolean => provenance?.chapter === divergence.atChapter && provenance.eventOrdinal !== undefined && provenance.eventOrdinal <= boundary
+    const events = full.events.filter(event => event.chapter === divergence.atChapter && event.orderInChapter !== undefined && event.orderInChapter <= boundary)
     return {
       ...full,
       characterStates: full.characterStates.filter(item => provenanceBefore(item.provenance)),
@@ -1645,7 +1705,7 @@ export class LocalFanficProvider implements FanficProvider {
   private async withEnrichmentLock<T>(operation: () => Promise<T>): Promise<T> {
     const prior = this.enrichmentTail
     let release!: () => void
-    const current = new Promise<void>((resolveLock) => { release = resolveLock })
+    const current = new Promise<void>(resolveLock => { release = resolveLock })
     const tail = prior.then(() => current)
     this.enrichmentTail = tail
     await prior
@@ -1689,11 +1749,50 @@ export class LocalFanficProvider implements FanficProvider {
     }
   }
 
-  private async issueAuditReceipt(kind: FanficAuditReceipt['kind'], draft: string, branch: FanficBranch, fanficChapter: number, signal?: AbortSignal): Promise<FanficAuditReceipt> {
+  private async resolveDraftInput(input: { readonly draftId?: string; readonly draft?: string }, signal?: AbortSignal): Promise<{ readonly text: string; readonly stagedDraft?: FanficDraft }> {
+    if (input.draftId !== undefined && input.draft !== undefined) throw new Error('provide draftId or draft, not both')
+    if (input.draftId !== undefined) {
+      const stagedDraft = await this.getDraft(input.draftId, signal)
+      return { text: stagedDraft.text, stagedDraft }
+    }
+    if (input.draft === undefined) throw new Error('draftId or draft is required')
+    return { text: nonEmpty(input.draft, 'draft') }
+  }
+
+  private async auditBranchForDraft(
+    stagedDraft: FanficDraft | undefined,
+    branchId: FanficBranchIdValue | undefined,
+    fanficChapter: number | undefined,
+    signal?: AbortSignal,
+  ): Promise<FanficBranch | undefined> {
+    const id = stagedDraft?.branchId ?? branchId
+    if (id === undefined) return undefined
+    const branch = await this.getBranch(id, signal)
+    if (stagedDraft !== undefined) {
+      if (branchId !== undefined && branchId !== stagedDraft.branchId) throw new Error('draftId and branchId refer to different branches')
+      if (fanficChapter !== undefined && fanficChapter !== stagedDraft.fanficChapter) throw new Error('draftId and fanficChapter refer to different chapters')
+      if (stagedDraft.branchRevision !== branch.revision) throw new Error(`staged draft was created at branch revision ${stagedDraft.branchRevision}, current revision is ${branch.revision}; stage a fresh draft`)
+    }
+    return branch
+  }
+
+  private async issueAuditReceipt(
+    kind: FanficAuditReceipt['kind'],
+    stagedDraft: FanficDraft,
+    branch: FanficBranch,
+    fanficChapter: number,
+    authorizedMysteryRevealIds: readonly string[] = [],
+    signal?: AbortSignal,
+  ): Promise<FanficAuditReceipt> {
+    if (stagedDraft.branchId !== branch.id || stagedDraft.fanficChapter !== fanficChapter) throw new Error('staged draft does not match audit branch/chapter')
+    if (stagedDraft.branchRevision !== branch.revision) throw new Error(`staged draft was created at branch revision ${stagedDraft.branchRevision}, current revision is ${branch.revision}; stage a fresh draft`)
     const receipt: FanficAuditReceipt = {
       id: `receipt-${kind}-${randomUUID()}`,
       kind,
-      draftHash: draftHash(draft),
+      draftHash: stagedDraft.draftHash,
+      draftId: stagedDraft.id,
+      writingContractHash: writingContractHash(branch.authorIntent.writingContract),
+      authorizedMysteryRevealIds: uniqueStrings(authorizedMysteryRevealIds),
       branchId: branch.id,
       fanficChapter: positiveSafeInteger(fanficChapter, 'fanficChapter'),
       branchRevision: branch.revision,
@@ -1705,35 +1804,24 @@ export class LocalFanficProvider implements FanficProvider {
     return receipt
   }
 
-  private async verifyAuditReceipts(
-    ids: readonly string[],
-    draft: string,
-    branch: FanficBranch,
-    fanficChapter: number,
-    signal?: AbortSignal,
-  ): Promise<readonly FanficAuditReceipt[]> {
+  private async verifyAuditReceipts(ids: readonly string[], stagedDraft: FanficDraft, branch: FanficBranch, fanficChapter: number, signal?: AbortSignal): Promise<readonly FanficAuditReceipt[]> {
     const uniqueIds = uniqueStrings(ids)
     if (uniqueIds.length !== 3) throw new Error('fanfic_apply_delta requires exactly three distinct audit receipts: canon, style, and anti-copy')
     const receipts: FanficAuditReceipt[] = []
     for (const id of uniqueIds) {
       if (!/^receipt-(?:canon|style|anti-copy)-[0-9a-f-]+$/u.test(id)) throw new Error(`invalid audit receipt id ${JSON.stringify(id)}`)
       let raw: string
-      try {
-        raw = await readFile(join(this.auditReceiptsDir, `${id}.json`), { encoding: 'utf8', signal })
-      } catch (error) {
-        if (isNodeError(error) && error.code === 'ENOENT') throw new Error(`audit receipt does not exist or was already consumed: ${JSON.stringify(id)}`)
-        throw error
-      }
+      try { raw = await readFile(join(this.auditReceiptsDir, `${id}.json`), { encoding: 'utf8', signal }) }
+      catch (error) { if (isNodeError(error) && error.code === 'ENOENT') throw new Error(`audit receipt does not exist or was already consumed: ${JSON.stringify(id)}`); throw error }
       receipts.push(parseAuditReceipt(JSON.parse(raw), 'auditReceipt'))
     }
     const kinds = new Set(receipts.map(item => item.kind))
-    for (const required of ['canon', 'style', 'anti-copy'] as const) {
-      if (!kinds.has(required)) throw new Error(`missing required ${required} audit receipt`)
-    }
-    const expectedHash = draftHash(draft)
+    for (const required of ['canon', 'style', 'anti-copy'] as const) if (!kinds.has(required)) throw new Error(`missing required ${required} audit receipt`)
+    const contractHash = writingContractHash(branch.authorIntent.writingContract)
     for (const receipt of receipts) {
       if (!receipt.ok) throw new Error(`audit receipt ${receipt.id} did not pass`)
-      if (receipt.draftHash !== expectedHash) throw new Error(`audit receipt ${receipt.id} belongs to a different draft`)
+      if (receipt.draftHash !== stagedDraft.draftHash || receipt.draftId !== stagedDraft.id) throw new Error(`audit receipt ${receipt.id} belongs to a different staged draft`)
+      if (receipt.writingContractHash !== contractHash) throw new Error(`audit receipt ${receipt.id} belongs to a different writing contract`)
       if (receipt.branchId !== branch.id || receipt.fanficChapter !== fanficChapter) throw new Error(`audit receipt ${receipt.id} belongs to a different branch/chapter`)
       if (receipt.branchRevision !== branch.revision) throw new Error(`audit receipt ${receipt.id} was issued at branch revision ${receipt.branchRevision}, current revision is ${branch.revision}; re-audit after branch mutations`)
     }
@@ -1745,12 +1833,14 @@ export class LocalFanficProvider implements FanficProvider {
     await Promise.all(receipts.map(receipt => rm(join(this.auditReceiptsDir, `${receipt.id}.json`), { force: true })))
   }
 
+  private draftPath(draftId: string): string { return join(this.draftsDir, `${validateDraftId(draftId)}.json`) }
+
   private async withBranchLock<T>(id: FanficBranchIdValue, operation: () => Promise<T>): Promise<T> {
     validateBranchId(id)
     const key = String(id)
     const prior = this.branchLocks.get(key) ?? Promise.resolve()
     let release!: () => void
-    const current = new Promise<void>((resolveLock) => { release = resolveLock })
+    const current = new Promise<void>(resolveLock => { release = resolveLock })
     const tail = prior.then(() => current)
     this.branchLocks.set(key, tail)
     await prior
@@ -1771,13 +1861,9 @@ interface ChapterRecordSet {
   readonly causalThreads: FanficCausalThread[]
 }
 
-interface ClonedChapterRecordSet extends ChapterRecordSet {
-  readonly causalIdMap: ReadonlyMap<string, string>
-}
+interface ClonedChapterRecordSet extends ChapterRecordSet { readonly causalIdMap: ReadonlyMap<string, string> }
 
-function emptyChapterRecordSet(): ClonedChapterRecordSet {
-  return { facts: [], knowledge: [], characterStates: [], relationships: [], causalThreads: [], causalIdMap: new Map() }
-}
+function emptyChapterRecordSet(): ClonedChapterRecordSet { return { facts: [], knowledge: [], characterStates: [], relationships: [], causalThreads: [], causalIdMap: new Map() } }
 
 function chapterRecords(branch: FanficBranch, chapterVersionId: string): ChapterRecordSet {
   return {
@@ -1789,15 +1875,9 @@ function chapterRecords(branch: FanficBranch, chapterVersionId: string): Chapter
   }
 }
 
-function cloneChapterRecords(
-  records: ChapterRecordSet,
-  chapterVersionId: string,
-  fanficChapter: number,
-  recordedAt: string,
-  dropIds: ReadonlySet<string>,
-): ClonedChapterRecordSet {
+function cloneChapterRecords(records: ChapterRecordSet, chapterVersionId: string, fanficChapter: number, recordedAt: string, dropIds: ReadonlySet<string>): ClonedChapterRecordSet {
   const causalIdMap = new Map<string, string>()
-  const causalThreads = records.causalThreads.filter(item => !dropIds.has(item.id)).map((item) => {
+  const causalThreads = records.causalThreads.filter(item => !dropIds.has(item.id)).map(item => {
     const id = `cause-${randomUUID()}`; causalIdMap.set(item.id, id)
     return { ...item, id, originFanficChapter: fanficChapter, originChapterVersionId: chapterVersionId, recordedAt, ...(item.status === 'resolved' ? { resolvedAt: recordedAt } : {}) }
   })
@@ -1812,22 +1892,10 @@ function cloneChapterRecords(
 }
 
 function chapterRecordCounts(records: ChapterRecordSet, dropped?: ReadonlySet<string>): Readonly<Record<string, number>> {
-  const count = <T extends { readonly id: string }>(rows: readonly T[]): number => {
-    return dropped === undefined ? rows.length : rows.filter(item => dropped.has(item.id)).length
-  }
-  return {
-    facts: count(records.facts),
-    knowledge: count(records.knowledge),
-    characterStates: count(records.characterStates),
-    relationships: count(records.relationships),
-    causalThreads: count(records.causalThreads),
-  }
+  const count = <T extends { readonly id: string }>(rows: readonly T[]): number => dropped === undefined ? rows.length : rows.filter(item => dropped.has(item.id)).length
+  return { facts: count(records.facts), knowledge: count(records.knowledge), characterStates: count(records.characterStates), relationships: count(records.relationships), causalThreads: count(records.causalThreads) }
 }
-
-function totalRecordCount(records: ChapterRecordSet): number {
-  return records.facts.length + records.knowledge.length + records.characterStates.length
-    + records.relationships.length + records.causalThreads.length
-}
+function totalRecordCount(records: ChapterRecordSet): number { return records.facts.length + records.knowledge.length + records.characterStates.length + records.relationships.length + records.causalThreads.length }
 
 function assertDeltaChapterAlignment(delta: FanficStateDelta): void {
   const chapter = delta.fanficChapter
@@ -1835,29 +1903,16 @@ function assertDeltaChapterAlignment(delta: FanficStateDelta): void {
     if (item.validFromFanficChapter !== chapter) throw new Error(`fanfic_apply_delta cannot backfill facts from chapter ${chapter} to ${item.validFromFanficChapter}; rewrite the owning chapter instead`)
     if (item.validUntilFanficChapter !== undefined && item.validUntilFanficChapter < chapter) throw new Error('fact validUntilFanficChapter precedes its owning chapter')
   }
-  for (const item of delta.knowledge ?? []) {
-    if (item.fromFanficChapter !== chapter) throw new Error(`fanfic_apply_delta cannot backfill knowledge from chapter ${chapter} to ${item.fromFanficChapter}; rewrite the owning chapter instead`)
-  }
-  for (const item of delta.characterStates ?? []) {
-    if (item.fromFanficChapter !== chapter) throw new Error(`fanfic_apply_delta cannot backfill character state from chapter ${chapter} to ${item.fromFanficChapter}; rewrite the owning chapter instead`)
-  }
-  for (const item of delta.relationships ?? []) {
-    if (item.fromFanficChapter !== chapter) throw new Error(`fanfic_apply_delta cannot backfill relationship state from chapter ${chapter} to ${item.fromFanficChapter}; rewrite the owning chapter instead`)
-  }
-  for (const item of delta.causalThreads ?? []) {
-    if (item.fromFanficChapter !== chapter) throw new Error(`fanfic_apply_delta cannot backfill causal threads from chapter ${chapter} to ${item.fromFanficChapter}; rewrite the owning chapter instead`)
-  }
+  for (const item of delta.knowledge ?? []) if (item.fromFanficChapter !== chapter) throw new Error(`fanfic_apply_delta cannot backfill knowledge from chapter ${chapter} to ${item.fromFanficChapter}; rewrite the owning chapter instead`)
+  for (const item of delta.characterStates ?? []) if (item.fromFanficChapter !== chapter) throw new Error(`fanfic_apply_delta cannot backfill character state from chapter ${chapter} to ${item.fromFanficChapter}; rewrite the owning chapter instead`)
+  for (const item of delta.relationships ?? []) if (item.fromFanficChapter !== chapter) throw new Error(`fanfic_apply_delta cannot backfill relationship state from chapter ${chapter} to ${item.fromFanficChapter}; rewrite the owning chapter instead`)
+  for (const item of delta.causalThreads ?? []) if (item.fromFanficChapter !== chapter) throw new Error(`fanfic_apply_delta cannot backfill causal threads from chapter ${chapter} to ${item.fromFanficChapter}; rewrite the owning chapter instead`)
 }
 
 function assertUniqueSemantic<T>(existing: readonly T[], incoming: readonly T[], key: (item: T) => string, label: string): void {
   const seen = new Set(existing.map(key))
-  for (const item of incoming) {
-    const value = key(item)
-    if (seen.has(value)) throw new Error(`duplicate semantic ${label} record in active branch state: ${value}`)
-    seen.add(value)
-  }
+  for (const item of incoming) { const value = key(item); if (seen.has(value)) throw new Error(`duplicate semantic ${label} record in active branch state: ${value}`); seen.add(value) }
 }
-
 function assertNoSemanticDuplicates(activeBefore: FanficBranch, inherited: ChapterRecordSet, delta: FanficStateDelta): void {
   assertUniqueSemantic([...activeBefore.facts, ...inherited.facts], (delta.facts ?? []) as readonly FanficOverlayFact[], item => JSON.stringify([item.subject, item.predicate, item.object]), 'fact')
   assertUniqueSemantic([...activeBefore.knowledge, ...inherited.knowledge], (delta.knowledge ?? []) as readonly FanficOverlayKnowledge[], item => JSON.stringify([item.character, item.subject, item.predicate, item.object, item.summary, item.stance]), 'knowledge')
@@ -1866,10 +1921,41 @@ function assertNoSemanticDuplicates(activeBefore: FanficBranch, inherited: Chapt
   assertUniqueSemantic([...activeBefore.causalThreads, ...inherited.causalThreads], (delta.causalThreads ?? []) as readonly FanficCausalThread[], item => JSON.stringify([item.summary]), 'causal-thread')
 }
 
-function draftHash(draft: string): string {
-  return createHash('sha256').update(draft, 'utf8').digest('hex')
+function draftHash(draft: string): string { return createHash('sha256').update(draft, 'utf8').digest('hex') }
+function writingContractHash(contract: FanficWritingContract): string { return createHash('sha256').update(JSON.stringify(contract), 'utf8').digest('hex') }
+function validateDraftId(value: unknown): string {
+  const id = nonEmpty(value, 'draftId')
+  if (!/^draft-[0-9a-f-]+$/u.test(id)) throw new Error(`invalid fanfic draft id ${JSON.stringify(id)}`)
+  return id
 }
-
+function parseDraft(value: unknown, label: string): FanficDraft {
+  const record = objectRecord(value, label)
+  const branchId = nonEmpty(record['branchId'], `${label}.branchId`); validateBranchId(branchId)
+  const text = nonEmpty(record['text'], `${label}.text`)
+  const draftHashValue = nonEmpty(record['draftHash'], `${label}.draftHash`)
+  if (draftHashValue !== draftHash(text)) throw new Error(`${label}.draftHash does not match staged text`)
+  return {
+    id: validateDraftId(record['id']),
+    branchId: FanficBranchId(branchId),
+    fanficChapter: positiveSafeInteger(record['fanficChapter'], `${label}.fanficChapter`),
+    branchRevision: positiveSafeInteger(record['branchRevision'], `${label}.branchRevision`),
+    draftRevision: positiveSafeInteger(record['draftRevision'], `${label}.draftRevision`),
+    text,
+    draftHash: draftHashValue,
+    createdAt: isoDate(record['createdAt'], `${label}.createdAt`),
+    updatedAt: isoDate(record['updatedAt'], `${label}.updatedAt`),
+  }
+}
+function normalizeMysteryRevealDeclarations(values: readonly FanficMysteryRevealDeclaration[]): FanficMysteryRevealDeclaration[] {
+  const seen = new Set<string>()
+  return values.map((value, index) => {
+    const mysteryId = nonEmpty(value.mysteryId, `mysteryReveals[${index}].mysteryId`)
+    if (seen.has(mysteryId)) throw new Error(`mysteryReveals contains duplicate mystery id ${JSON.stringify(mysteryId)}`)
+    seen.add(mysteryId)
+    if (value.level !== 'partial' && value.level !== 'truth') throw new Error(`mysteryReveals[${index}].level is invalid`)
+    return { mysteryId, level: value.level, satisfiedConditions: uniqueStrings(value.satisfiedConditions), conditionEvidence: uniqueStrings(value.conditionEvidence) }
+  })
+}
 function parseAuditReceipt(value: unknown, label: string): FanficAuditReceipt {
   const record = objectRecord(value, label)
   const branchId = nonEmpty(record['branchId'], `${label}.branchId`); validateBranchId(branchId)
@@ -1877,6 +1963,9 @@ function parseAuditReceipt(value: unknown, label: string): FanficAuditReceipt {
     id: nonEmpty(record['id'], `${label}.id`),
     kind: enumString(record['kind'], `${label}.kind`, ['canon', 'style', 'anti-copy'] as const),
     draftHash: nonEmpty(record['draftHash'], `${label}.draftHash`),
+    draftId: validateDraftId(record['draftId']),
+    writingContractHash: nonEmpty(record['writingContractHash'], `${label}.writingContractHash`),
+    authorizedMysteryRevealIds: uniqueStrings(stringArray(record['authorizedMysteryRevealIds'] ?? [], `${label}.authorizedMysteryRevealIds`)),
     branchId: FanficBranchId(branchId),
     fanficChapter: positiveSafeInteger(record['fanficChapter'], `${label}.fanficChapter`),
     branchRevision: positiveSafeInteger(record['branchRevision'], `${label}.branchRevision`),
@@ -1885,15 +1974,8 @@ function parseAuditReceipt(value: unknown, label: string): FanficAuditReceipt {
   }
 }
 
-function compactBranchForAuthor(
-  branch: FanficBranch,
-  relevantEntities: readonly string[],
-  recordLimit: number,
-  summaryLimit: number,
-): FanficBranch {
-  const relevant = (values: readonly string[]): boolean => {
-    return relevantEntities.length === 0 || values.some(value => relevantEntities.some(entity => sameName(value, entity)))
-  }
+function compactBranchForAuthor(branch: FanficBranch, relevantEntities: readonly string[], recordLimit: number, summaryLimit: number): FanficBranch {
+  const relevant = (values: readonly string[]): boolean => relevantEntities.length === 0 || values.some(value => relevantEntities.some(entity => sameName(value, entity)))
   const tail = <T>(rows: readonly T[]): T[] => rows.slice(-recordLimit)
   const facts = tail(branch.facts.filter(item => relevant([item.subject])))
   const knowledge = tail(branch.knowledge.filter(item => relevant([item.character, item.subject ?? ''])))
@@ -1901,16 +1983,8 @@ function compactBranchForAuthor(
   const relationships = tail(branch.relationships.filter(item => relevant([item.subject, item.object])))
   const causalThreads = tail(branch.causalThreads.filter(item => item.status === 'open' || relevant([item.summary])))
   const chapterSummaries = branch.chapterSummaries.slice(-summaryLimit)
-  const versionIds = new Set([
-    ...facts, ...knowledge, ...characterStates, ...relationships, ...causalThreads,
-  ].map(item => item.originChapterVersionId).concat(chapterSummaries.map(item => item.chapterVersionId)))
-  return {
-    ...branch,
-    storyDirector: emptyStoryDirector(),
-    chapterVersions: branch.chapterVersions.filter(item => item.status === 'active'
-      && (versionIds.has(item.id) || item.fanficChapter >= Math.max(1, (chapterSummaries.at(-1)?.fanficChapter ?? 1) - summaryLimit))),
-    facts, knowledge, characterStates, relationships, causalThreads, chapterSummaries,
-  }
+  const versionIds = new Set([...facts, ...knowledge, ...characterStates, ...relationships, ...causalThreads].map(item => item.originChapterVersionId).concat(chapterSummaries.map(item => item.chapterVersionId)))
+  return { ...branch, storyDirector: emptyStoryDirector(), chapterVersions: branch.chapterVersions.filter(item => item.status === 'active' && (versionIds.has(item.id) || item.fanficChapter >= Math.max(1, (chapterSummaries.at(-1)?.fanficChapter ?? 1) - summaryLimit))), facts, knowledge, characterStates, relationships, causalThreads, chapterSummaries }
 }
 
 function compactAuthorContextToBudget(context: AuthorContext, sourceExcerptLimit: number, maxJsonChars: number): AuthorContext {
@@ -1931,11 +2005,7 @@ function compactAuthorContextToBudget(context: AuthorContext, sourceExcerptLimit
       sourceExcerpts: snapshot.sourceExcerpts.slice(0, sourceLimit),
     }
   }
-  const trimIntelligence = (
-    rows: readonly CharacterIntelligence[],
-    dossierLimit: number,
-    recordLimit: number,
-  ): readonly CharacterIntelligence[] => rows.slice(0, dossierLimit).map(item => ({
+  const trimIntelligence = (rows: readonly CharacterIntelligence[], dossierLimit: number, recordLimit: number): readonly CharacterIntelligence[] => rows.slice(0, dossierLimit).map(item => ({
     ...item,
     states: item.states.slice(0, recordLimit),
     identities: item.identities.slice(0, recordLimit),
@@ -1964,7 +2034,40 @@ function compactAuthorContextToBudget(context: AuthorContext, sourceExcerptLimit
     causalThreads: branch.causalThreads.filter(item => item.status === 'open').slice(-4),
     chapterSummaries: branch.chapterSummaries.slice(-3),
   }
-  const fits = (value: AuthorContext): boolean => JSON.stringify(value).length <= maxJsonChars
+  const counts = (value: AuthorContext) => ({
+    sourceExcerpts: value.canonTruth.sourceExcerpts.length
+      + (value.canonSameChapterTruth?.sourceExcerpts.length ?? 0)
+      + (value.canonReference?.sourceExcerpts.length ?? 0)
+      + value.narrativeStyle.samples.length,
+    characterEvidence: value.characterIntelligence.reduce((sum, item) => sum + item.sourceEvidence.length, 0),
+    olderBranchRecords: value.branch === undefined ? 0 : value.branch.facts.length + value.branch.knowledge.length + value.branch.characterStates.length
+      + value.branch.relationships.length + value.branch.causalThreads.length + value.branch.chapterSummaries.length + value.branch.chapterVersions.length,
+    storyDirectorRecords: value.storyDirector === undefined ? 0 : value.storyDirector.activeArcs.length + value.storyDirector.activeThreads.length
+      + value.storyDirector.dueThreads.length + value.storyDirector.liveForeshadows.length + value.storyDirector.mysteryTruths.length
+      + value.storyDirector.inventions.length + value.storyDirector.horizon.length + value.storyDirector.recentChapterSummaries.length
+      + value.storyDirector.unresolvedCausalThreads.length + value.storyDirector.reconciliation.length,
+  })
+  const baseline = counts(context)
+  const finalize = (value: AuthorContext, compactionLevel: number): AuthorContext => {
+    const current = counts(value)
+    const omitted = {
+      sourceExcerpts: Math.max(0, baseline.sourceExcerpts - current.sourceExcerpts),
+      characterEvidence: Math.max(0, baseline.characterEvidence - current.characterEvidence),
+      olderBranchRecords: Math.max(0, baseline.olderBranchRecords - current.olderBranchRecords),
+      storyDirectorRecords: Math.max(0, baseline.storyDirectorRecords - current.storyDirectorRecords),
+    }
+    let candidate: AuthorContext = { ...value, telemetry: { serializedChars: 0, budgetChars: maxJsonChars, compactionLevel, omitted } }
+    for (let index = 0; index < 3; index++) {
+      const serializedChars = JSON.stringify(candidate).length
+      if (candidate.telemetry.serializedChars === serializedChars) break
+      candidate = { ...candidate, telemetry: { ...candidate.telemetry, serializedChars } }
+    }
+    return candidate
+  }
+  const fit = (value: AuthorContext, level: number): AuthorContext | undefined => {
+    const candidate = finalize(value, level)
+    return JSON.stringify(candidate).length <= maxJsonChars ? candidate : undefined
+  }
   const budgetNotice = `Author context was compacted to the configured ${maxJsonChars}-character hard budget. Fetch omitted evidence on demand with canon_search/canon_chapter_read/character_voice_context.`
 
   let value: AuthorContext = {
@@ -1974,7 +2077,8 @@ function compactAuthorContextToBudget(context: AuthorContext, sourceExcerptLimit
     ...(context.canonReference === undefined ? {} : { canonReference: trimSnapshot(context.canonReference, 0) }),
     characterIntelligence: context.characterIntelligence.map(item => ({ ...item, sourceEvidence: item.sourceEvidence.slice(0, 1) })),
   }
-  if (fits(value)) return value
+  let result = fit(value, 0)
+  if (result !== undefined) return result
 
   value = {
     ...value,
@@ -1982,7 +2086,8 @@ function compactAuthorContextToBudget(context: AuthorContext, sourceExcerptLimit
     characterIntelligence: value.characterIntelligence.map(item => ({ ...item, sourceEvidence: [] })),
     hardConstraints: [...value.hardConstraints, budgetNotice],
   }
-  if (fits(value)) return value
+  result = fit(value, 1)
+  if (result !== undefined) return result
 
   value = {
     ...value,
@@ -1992,7 +2097,8 @@ function compactAuthorContextToBudget(context: AuthorContext, sourceExcerptLimit
     contextExpansion: { ...value.contextExpansion, discovered: value.contextExpansion.discovered.slice(0, 8) },
     characterIntelligence: trimIntelligence(value.characterIntelligence, 4, 4),
   }
-  if (fits(value)) return value
+  result = fit(value, 2)
+  if (result !== undefined) return result
 
   value = {
     ...value,
@@ -2016,7 +2122,8 @@ function compactAuthorContextToBudget(context: AuthorContext, sourceExcerptLimit
       reconciliation: value.storyDirector.reconciliation.filter(item => item.status === 'open').slice(0, 4),
     } }),
   }
-  if (fits(value)) return value
+  result = fit(value, 3)
+  if (result !== undefined) return result
 
   value = {
     ...value,
@@ -2026,7 +2133,8 @@ function compactAuthorContextToBudget(context: AuthorContext, sourceExcerptLimit
     characterIntelligence: [],
     ...(value.branch === undefined ? {} : { branch: minimalBranch(value.branch) as FanficBranch }),
   }
-  if (fits(value)) return value
+  result = fit(value, 4)
+  if (result !== undefined) return result
   throw new Error(`author context cannot satisfy configured hard budget of ${maxJsonChars} JSON characters; raise authorContextMaxJsonChars or request less scene context`)
 }
 
@@ -2053,11 +2161,7 @@ const STYLE_MODE_KEYWORDS: Readonly<Record<Exclude<NarrativeStyleMode, 'auto'>, 
   emotional: ['心疼', '温柔', '怅然', '悲伤', '欢喜', '微笑', '泪', '情意', '相拥', '牵手'],
 }
 
-async function loadNarrativeStyleBank(
-  path: string,
-  source: CanonPackSource,
-  chapters: readonly CanonChapter[],
-): Promise<NarrativeStyleBank> {
+async function loadNarrativeStyleBank(path: string, source: CanonPackSource, chapters: readonly CanonChapter[]): Promise<NarrativeStyleBank> {
   if (!existsSync(path)) return buildNarrativeStyleBank(source, chapters)
   const record = objectRecord(await readJson(path), 'styleBank')
   const schemaVersion = positiveSafeInteger(record['schemaVersion'], 'styleBank.schemaVersion')
@@ -2077,11 +2181,8 @@ async function loadNarrativeStyleBank(
   })
   if (rows.length !== chapters.length) throw new Error(`style bank has ${rows.length} chapter rows, expected ${chapters.length}`)
   for (let index = 0; index < rows.length; index++) {
-    const row = rows[index]
-    const chapter = chapters[index]
-    if (row === undefined || chapter === undefined) {
-      throw new Error(`style bank row ${index + 1} is missing its chapter`)
-    }
+    const row = rows[index]!
+    const chapter = chapters[index]!
     if (row.chapter !== chapter.index || row.chapterSha256 !== chapter.sha256) throw new Error(`style bank row ${index + 1} does not match canon chapter ${chapter.index}`)
   }
   return { schemaVersion, sourceSha256, chapterCount, modes, chapterMetrics: rows }
@@ -2121,7 +2222,7 @@ function parseNarrativeStyleMetrics(value: unknown, label: string): NarrativeSty
   }
 }
 
-function normalizeNarrativeStyleMode(value: NarrativeStyleMode): NarrativeStyleMode {
+function normalizeNarrativeStyleMode(value: unknown): NarrativeStyleMode {
   if (value === 'auto') return value
   return normalizeConcreteNarrativeStyleMode(value)
 }
@@ -2148,9 +2249,7 @@ function resolveNarrativeStyleMode(pack: LoadedCanonPack, cutoff: number, reques
   if (requested !== 'auto') return requested
   const scores = new Map<Exclude<NarrativeStyleMode, 'auto'>, number>(NARRATIVE_STYLE_MODES.map(mode => [mode, 0]))
   for (const mode of NARRATIVE_STYLE_MODES) {
-    for (const keyword of styleKeywords(mode)) {
-      scores.set(mode, (scores.get(mode) ?? 0) + countTextOccurrences(query, keyword) * 25)
-    }
+    for (const keyword of styleKeywords(mode)) scores.set(mode, scores.get(mode)! + countTextOccurrences(query, keyword) * 25)
   }
   const terms = searchTerms(query)
   if (terms.length > 0) {
@@ -2160,17 +2259,13 @@ function resolveNarrativeStyleMode(pack: LoadedCanonPack, cutoff: number, reques
       if (queryScore <= 0) continue
       const row = pack.styleBank.chapterMetrics[chapter.index - 1]
       if (row === undefined) continue
-      for (const mode of NARRATIVE_STYLE_MODES) {
-        scores.set(mode, (scores.get(mode) ?? 0) + (row.modeScores[mode] ?? 0) * queryScore)
-      }
+      for (const mode of NARRATIVE_STYLE_MODES) scores.set(mode, scores.get(mode)! + (row.modeScores[mode] ?? 0) * queryScore)
     }
   }
   if ([...scores.values()].every(value => value === 0)) {
     for (const row of pack.styleBank.chapterMetrics) {
       if (row.chapter > cutoff) break
-      for (const mode of NARRATIVE_STYLE_MODES) {
-        scores.set(mode, (scores.get(mode) ?? 0) + (row.modeScores[mode] ?? 0))
-      }
+      for (const mode of NARRATIVE_STYLE_MODES) scores.set(mode, scores.get(mode)! + (row.modeScores[mode] ?? 0))
     }
   }
   return [...scores.entries()].sort((a, b) => b[1] - a[1] || NARRATIVE_STYLE_MODES.indexOf(a[0]) - NARRATIVE_STYLE_MODES.indexOf(b[0]))[0]?.[0] ?? 'jianghu'
@@ -2199,6 +2294,90 @@ function measureNarrativeStyle(text: string): NarrativeStyleMetrics {
     questionRate: (countTextOccurrences(stripped, '？') + countTextOccurrences(stripped, '?')) / denominator,
     exclamationRate: (countTextOccurrences(stripped, '！') + countTextOccurrences(stripped, '!')) / denominator,
     ellipsisRate: (countTextOccurrences(stripped, '……') + countTextOccurrences(stripped, '…')) / denominator,
+  }
+}
+
+interface ProseQualityThresholds {
+  readonly ultraShortHanChars: number
+  readonly maxUltraShortRun: number
+  readonly tailUltraShortRatio: number
+  readonly minBigramDiversity: number
+  readonly tailFillerLimit: number
+}
+
+function assessProseQuality(text: string, thresholds: ProseQualityThresholds): ProseQualityResult {
+  const paragraphs = text.trim().split(/\n+/u).map(value => value.trim()).filter(Boolean)
+  const hanCount = (value: string): number => [...value].filter(char => /[\u3400-\u9fff]/u.test(char)).length
+  const paragraphHan = paragraphs.map(hanCount)
+  const ultraShort = paragraphHan.map(value => value > 0 && value <= 8)
+  let maxUltraShortParagraphRun = 0
+  let currentRun = 0
+  for (const value of ultraShort) {
+    currentRun = value ? currentRun + 1 : 0
+    maxUltraShortParagraphRun = Math.max(maxUltraShortParagraphRun, currentRun)
+  }
+  const sentences = (text.match(/[^。！？!?…\n]+[。！？!?…]*/gu) ?? [])
+    .map(value => value.normalize('NFKC').replace(/[\s。！？!?…，,；;：“”"'（）()、]/gu, ''))
+    .filter(value => hanCount(value) >= 2)
+  const sentenceCounts = new Map<string, number>()
+  for (const sentence of sentences) sentenceCounts.set(sentence, (sentenceCounts.get(sentence) ?? 0) + 1)
+  const repeatedSentenceCount = [...sentenceCounts.values()].reduce((sum, count) => sum + Math.max(0, count - 1), 0)
+  const han = [...text].filter(char => /[\u3400-\u9fff]/u.test(char)).join('')
+  const bigrams: string[] = []
+  for (let index = 0; index + 1 < han.length; index++) bigrams.push(han.slice(index, index + 2))
+  const hanBigramDiversity = bigrams.length === 0 ? 1 : new Set(bigrams).size / bigrams.length
+  const tail = paragraphs.slice(-Math.min(24, paragraphs.length))
+  const tailUltraShortParagraphRatio = tail.length === 0 ? 0 : tail.filter(value => {
+    const count = hanCount(value)
+    return count > 0 && count <= 8
+  }).length / tail.length
+  const fillerPhrases = ['继续', '慢慢来', '不急', '就这样', '好的', '嗯', '一步一步', '新的一天', '生活继续', '调查继续']
+  const tailText = tail.join('\n')
+  const fillerHits = fillerPhrases.reduce((sum, phrase) => sum + countTextOccurrences(tailText, phrase), 0)
+  const findings: ProseQualityFinding[] = []
+  if (maxUltraShortParagraphRun >= thresholds.maxUltraShortRun) findings.push({
+    severity: 'revision-required',
+    code: 'PROSE_DEGENERATION_SHORT_PARAGRAPH_RUN',
+    message: `Revise the draft: it contains ${maxUltraShortParagraphRun} consecutive ultra-short paragraphs, a strong generation-degeneration/padding signal.`,
+  })
+  if (tail.length >= 12 && tailUltraShortParagraphRatio >= 0.6) findings.push({
+    severity: 'revision-required',
+    code: 'PROSE_DEGENERATION_TAIL_COLLAPSE',
+    message: `Revise the ending: ${Math.round(tailUltraShortParagraphRatio * 100)}% of the final ${tail.length} paragraphs are eight Han characters or shorter.`,
+  })
+  if (repeatedSentenceCount >= 5) findings.push({
+    severity: 'revision-required',
+    code: 'PROSE_DEGENERATION_REPEATED_SENTENCES',
+    message: `Revise repeated prose: the draft repeats ${repeatedSentenceCount} normalized sentence units.`,
+  })
+  if (han.length >= 1200 && hanBigramDiversity < thresholds.minBigramDiversity) findings.push({
+    severity: 'revision-required',
+    code: 'PROSE_DEGENERATION_LEXICAL_COLLAPSE',
+    message: `Revise repetitive wording: Han-bigram diversity fell to ${hanBigramDiversity.toFixed(3)}.`,
+  })
+  if (tail.length >= 12 && fillerHits >= 6) findings.push({
+    severity: 'revision-required',
+    code: 'PROSE_DEGENERATION_PADDING_CADENCE',
+    message: `Revise the ending: repeated generic continuation/padding phrases occur ${fillerHits} times in the final ${tail.length} paragraphs.`,
+    evidence: fillerPhrases.filter(phrase => tailText.includes(phrase)).join(' / '),
+  })
+  const ultraShortParagraphRatio = paragraphs.length === 0 ? 0 : ultraShort.filter(Boolean).length / paragraphs.length
+  if (ultraShortParagraphRatio >= 0.45 && !findings.some(item => item.code === 'PROSE_DEGENERATION_SHORT_PARAGRAPH_RUN')) findings.push({
+    severity: 'warning',
+    code: 'PROSE_SHORT_PARAGRAPH_DENSITY',
+    message: `${Math.round(ultraShortParagraphRatio * 100)}% of paragraphs are eight Han characters or shorter; verify that dramatic breaks are intentional rather than generic suspense cadence.`,
+  })
+  return {
+    ok: !findings.some(item => item.severity === 'revision-required'),
+    findings,
+    metrics: {
+      paragraphCount: paragraphs.length,
+      ultraShortParagraphRatio,
+      maxUltraShortParagraphRun,
+      repeatedSentenceCount,
+      hanBigramDiversity,
+      tailUltraShortParagraphRatio,
+    },
   }
 }
 
@@ -2235,11 +2414,7 @@ function narrativeStyleGuidance(mode: Exclude<NarrativeStyleMode, 'auto'>, refer
   return guidance
 }
 
-function narrativeStyleDeviations(
-  draft: NarrativeStyleMetrics,
-  reference: NarrativeStyleMetrics,
-  ratio: number,
-): NarrativeStyleDeviation[] {
+function narrativeStyleDeviations(draft: NarrativeStyleMetrics, reference: NarrativeStyleMetrics, ratio: number): NarrativeStyleDeviation[] {
   const keys: readonly (keyof NarrativeStyleMetrics)[] = ['dialogueCharRatio', 'meanSentenceChars', 'medianSentenceChars', 'meanParagraphChars', 'medianParagraphChars', 'shortParagraphRatio', 'questionRate', 'exclamationRate', 'ellipsisRate']
   const deviations: NarrativeStyleDeviation[] = []
   for (const metric of keys) {
@@ -2298,13 +2473,7 @@ function buildCopyCorpus(chapters: readonly CanonChapter[]): CopyCorpus {
   return { text: parts.join(''), spans }
 }
 
-function findAntiCopyOverlaps(
-  draft: string,
-  corpus: CopyCorpus,
-  cutoff: number,
-  minPhraseChars: number,
-  maxFindings: number,
-): AntiCopyFinding[] {
+function findAntiCopyOverlaps(draft: string, corpus: CopyCorpus, cutoff: number, minPhraseChars: number, maxFindings: number): AntiCopyFinding[] {
   if (draft.length < minPhraseChars) return []
   const findings: AntiCopyFinding[] = []
   const seen = new Set<string>()
@@ -2342,30 +2511,9 @@ function findAntiCopyOverlaps(
 }
 
 function meaningfulCharacterCount(value: string): number { return value.match(/[\p{L}\p{N}]/gu)?.length ?? 0 }
-function countTextOccurrences(text: string, term: string): number {
-  if (term.length === 0) return 0
-  let count = 0
-  let offset = 0
-  while ((offset = text.indexOf(term, offset)) >= 0) {
-    count++
-    offset += term.length
-  }
-  return count
-}
-function average(values: readonly number[]): number {
-  return values.length === 0 ? 0 : values.reduce((sum, value) => sum + value, 0) / values.length
-}
-function median(values: readonly number[]): number {
-  if (values.length === 0) return 0
-  const sorted = [...values].sort((a, b) => a - b)
-  const middle = Math.floor(sorted.length / 2)
-  if (sorted.length % 2 === 0) {
-    const low = sorted[middle - 1] ?? 0
-    const high = sorted[middle] ?? 0
-    return (low + high) / 2
-  }
-  return sorted[middle] ?? 0
-}
+function countTextOccurrences(text: string, term: string): number { if (term.length === 0) return 0; let count = 0; let offset = 0; while ((offset = text.indexOf(term, offset)) >= 0) { count++; offset += term.length } return count }
+function average(values: readonly number[]): number { return values.length === 0 ? 0 : values.reduce((sum, value) => sum + value, 0) / values.length }
+function median(values: readonly number[]): number { if (values.length === 0) return 0; const sorted = [...values].sort((a, b) => a - b); const middle = Math.floor(sorted.length / 2); return sorted.length % 2 === 0 ? (sorted[middle - 1]! + sorted[middle]!) / 2 : sorted[middle]! }
 
 function parseManifest(value: unknown): CanonPackManifest {
   const record = objectRecord(value, 'manifest')
@@ -2580,16 +2728,13 @@ function parseProvenance(value: unknown, label: string): CanonProvenance {
 }
 
 
-function materializeCausalThreadStatus(
-  threads: readonly FanficCausalThread[],
-  versions: readonly FanficChapterVersion[],
-): FanficCausalThread[] {
+function materializeCausalThreadStatus(threads: readonly FanficCausalThread[], versions: readonly FanficChapterVersion[]): FanficCausalThread[] {
   const resolvedAt = new Map<string, string>()
   for (const version of versions) {
     if (version.status !== 'active') continue
     for (const id of version.resolvedCausalThreadIds) resolvedAt.set(id, version.createdAt)
   }
-  return threads.map((thread) => {
+  return threads.map(thread => {
     const at = resolvedAt.get(thread.id)
     if (at !== undefined) return { ...thread, status: 'resolved' as const, resolvedAt: at }
     const { resolvedAt: _resolvedAt, ...open } = thread
@@ -2614,8 +2759,7 @@ function branchView(branch: FanficBranch, fanficChapter: number | undefined, exc
     ...branch,
     chapterVersions: visibleVersions,
     facts: branch.facts.filter(item => versionVisible(item.originFanficChapter, item.originChapterVersionId)
-      && (cutoff === undefined || (item.validFromFanficChapter <= cutoff
-        && (item.validUntilFanficChapter === undefined || cutoff <= item.validUntilFanficChapter)))),
+      && (cutoff === undefined || (item.validFromFanficChapter <= cutoff && (item.validUntilFanficChapter === undefined || cutoff <= item.validUntilFanficChapter)))),
     knowledge: branch.knowledge.filter(item => versionVisible(item.originFanficChapter, item.originChapterVersionId)
       && (cutoff === undefined || item.fromFanficChapter <= cutoff)),
     characterStates: branch.characterStates.filter(item => versionVisible(item.originFanficChapter, item.originChapterVersionId)
@@ -2630,8 +2774,7 @@ function branchView(branch: FanficBranch, fanficChapter: number | undefined, exc
 
 function parseBranch(value: unknown): FanficBranch {
   const record = objectRecord(value, 'branch')
-  if (record['version'] === 1) return migrateLegacyBranch(record)
-  if (record['version'] !== 2) throw new Error(`unsupported fanfic branch version ${JSON.stringify(record['version'])}`)
+  if (record['version'] !== 3) throw new Error(`unsupported fanfic branch version ${JSON.stringify(record['version'])}; v0.7 requires a fresh branch format v3 state directory`)
   const id = nonEmpty(record['id'], 'branch.id')
   validateBranchId(id)
   const divergences = parseArray(record['divergences'], 'branch.divergences', parseStoredDivergence)
@@ -2663,7 +2806,7 @@ function parseBranch(value: unknown): FanficBranch {
   }
   for (const item of chapterSummaries) if (!knownVersionIds.has(item.chapterVersionId)) throw new Error(`chapter summary references unknown chapter version ${JSON.stringify(item.chapterVersionId)}`)
   return {
-    version: 2,
+    version: 3,
     id: FanficBranchId(id),
     name: nonEmpty(record['name'], 'branch.name'),
     baseChapter: positiveSafeInteger(record['baseChapter'], 'branch.baseChapter'),
@@ -2692,8 +2835,10 @@ function parseChapterVersion(value: unknown, label: string): FanficChapterVersio
     fanficChapter: positiveSafeInteger(record['fanficChapter'], `${label}.fanficChapter`),
     status,
     rewriteMode: enumString(record['rewriteMode'] ?? 'initial', `${label}.rewriteMode`, ['initial', 'inherit', 'replace'] as const),
-    ...(record['replacesVersionId'] === undefined ? {} : { replacesVersionId: nonEmpty(record['replacesVersionId'], `${label}.replacesVersionId`) }),
+    ...optionalNamedString(record['replacesVersionId'], `${label}.replacesVersionId`, 'replacesVersionId'),
     resolvedCausalThreadIds: uniqueStrings(stringArray(record['resolvedCausalThreadIds'] ?? [], `${label}.resolvedCausalThreadIds`)),
+    draftId: validateDraftId(record['draftId']),
+    draftHash: nonEmpty(record['draftHash'], `${label}.draftHash`),
     createdAt: isoDate(record['createdAt'], `${label}.createdAt`),
     ...(record['supersededAt'] === undefined ? {} : { supersededAt: isoDate(record['supersededAt'], `${label}.supersededAt`) }),
   }
@@ -2706,101 +2851,6 @@ function parseChapterSummary(value: unknown, label: string): FanficChapterSummar
     chapterVersionId: nonEmpty(record['chapterVersionId'], `${label}.chapterVersionId`),
     summary: nonEmpty(record['summary'], `${label}.summary`),
     recordedAt: isoDate(record['recordedAt'], `${label}.recordedAt`),
-  }
-}
-
-function migrateLegacyBranch(record: Record<string, unknown>): FanficBranch {
-  const id = nonEmpty(record['id'], 'branch.id')
-  validateBranchId(id)
-  const rawFacts = parseArray(record['facts'], 'branch.facts', parseLegacyFact)
-  const rawKnowledge = parseArray(record['knowledge'], 'branch.knowledge', parseLegacyKnowledge)
-  const rawCharacters = parseArray(record['characterStates'], 'branch.characterStates', parseLegacyCharacter)
-  const rawRelationships = parseArray(record['relationships'], 'branch.relationships', parseLegacyRelationship)
-  const rawThreads = parseArray(record['causalThreads'], 'branch.causalThreads', parseLegacyThread)
-  const rawSummaries = parseArray(record['chapterSummaries'], 'branch.chapterSummaries', (item, label) => {
-    const summary = objectRecord(item, label)
-    return { fanficChapter: positiveSafeInteger(summary['fanficChapter'], `${label}.fanficChapter`), summary: nonEmpty(summary['summary'], `${label}.summary`), recordedAt: isoDate(summary['recordedAt'], `${label}.recordedAt`) }
-  })
-  const chapters = new Set<number>()
-  for (const item of rawFacts) chapters.add(item.validFromFanficChapter)
-  for (const item of rawKnowledge) chapters.add(item.fromFanficChapter)
-  for (const item of rawCharacters) chapters.add(item.fromFanficChapter)
-  for (const item of rawRelationships) chapters.add(item.fromFanficChapter)
-  for (const item of rawThreads) chapters.add(item.fromFanficChapter)
-  for (const item of rawSummaries) chapters.add(item.fanficChapter)
-  const chapterVersions = [...chapters].sort((a, b) => a - b).map((fanficChapter): FanficChapterVersion => ({
-    id: `legacy-chapter-${fanficChapter}`,
-    fanficChapter,
-    status: 'active',
-    rewriteMode: 'initial',
-    resolvedCausalThreadIds: rawThreads.filter(item => item.fromFanficChapter === fanficChapter && item.status === 'resolved').map(item => item.id),
-    createdAt: isoDate(record['createdAt'], 'branch.createdAt'),
-  }))
-  const versionFor = (chapter: number): string => `legacy-chapter-${chapter}`
-  const dedupe = <T>(rows: readonly T[], key: (row: T) => string): T[] => {
-    const seen = new Set<string>(); const output: T[] = []
-    for (const row of rows) { const value = key(row); if (seen.has(value)) continue; seen.add(value); output.push(row) }
-    return output
-  }
-  const facts = dedupe(
-    rawFacts.map(item => ({
-      ...item,
-      originFanficChapter: item.validFromFanficChapter,
-      originChapterVersionId: versionFor(item.validFromFanficChapter),
-    })),
-    item => JSON.stringify([item.subject, item.predicate, item.object, item.validFromFanficChapter, item.validUntilFanficChapter]),
-  )
-  const knowledge = dedupe(
-    rawKnowledge.map(item => ({
-      ...item,
-      originFanficChapter: item.fromFanficChapter,
-      originChapterVersionId: versionFor(item.fromFanficChapter),
-    })),
-    item => JSON.stringify([item.character, item.subject, item.predicate, item.object, item.summary, item.stance, item.fromFanficChapter]),
-  )
-  const characterStates = dedupe(
-    rawCharacters.map(item => ({
-      ...item,
-      originFanficChapter: item.fromFanficChapter,
-      originChapterVersionId: versionFor(item.fromFanficChapter),
-    })),
-    item => JSON.stringify([item.character, item.summary, item.fromFanficChapter]),
-  )
-  const relationships = dedupe(
-    rawRelationships.map(item => ({
-      ...item,
-      originFanficChapter: item.fromFanficChapter,
-      originChapterVersionId: versionFor(item.fromFanficChapter),
-    })),
-    item => JSON.stringify([item.subject, item.object, item.summary, item.fromFanficChapter]),
-  )
-  const causalThreads = dedupe(
-    rawThreads.map(item => ({
-      ...item,
-      originFanficChapter: item.fromFanficChapter,
-      originChapterVersionId: versionFor(item.fromFanficChapter),
-    })),
-    item => JSON.stringify([item.summary, item.status, item.fromFanficChapter]),
-  )
-  const latestSummary = new Map<number, typeof rawSummaries[number]>()
-  for (const item of rawSummaries) {
-    const prior = latestSummary.get(item.fanficChapter)
-    if (prior === undefined || item.recordedAt > prior.recordedAt) latestSummary.set(item.fanficChapter, item)
-  }
-  const chapterSummaries = [...latestSummary.values()].map(item => ({ ...item, chapterVersionId: versionFor(item.fanficChapter) }))
-  return {
-    version: 2,
-    id: FanficBranchId(id),
-    name: nonEmpty(record['name'], 'branch.name'),
-    baseChapter: positiveSafeInteger(record['baseChapter'], 'branch.baseChapter'),
-    revision: positiveSafeInteger(record['revision'], 'branch.revision'),
-    notes: typeof record['notes'] === 'string' ? record['notes'] : '',
-    authorIntent: normalizeAuthorIntent(record['authorIntent']),
-    storyDirector: normalizeStoryDirector(record['storyDirector'] ?? {}),
-    createdAt: isoDate(record['createdAt'], 'branch.createdAt'),
-    updatedAt: isoDate(record['updatedAt'], 'branch.updatedAt'),
-    divergences: parseArray(record['divergences'], 'branch.divergences', parseStoredDivergence),
-    chapterVersions, facts, knowledge, characterStates, relationships, causalThreads, chapterSummaries,
   }
 }
 
@@ -2865,18 +2915,6 @@ function parseStoredThread(value: unknown, label: string): FanficCausalThread {
   return { id: nonEmpty(record['id'], `${label}.id`), originFanficChapter: positiveSafeInteger(record['originFanficChapter'], `${label}.originFanficChapter`), originChapterVersionId: nonEmpty(record['originChapterVersionId'], `${label}.originChapterVersionId`), summary: nonEmpty(record['summary'], `${label}.summary`), status, fromFanficChapter: positiveSafeInteger(record['fromFanficChapter'], `${label}.fromFanficChapter`), recordedAt: isoDate(record['recordedAt'], `${label}.recordedAt`), ...(record['resolvedAt'] === undefined ? {} : { resolvedAt: isoDate(record['resolvedAt'], `${label}.resolvedAt`) }) }
 }
 
-
-function parseLegacyFact(value: unknown, label: string): Omit<FanficOverlayFact, 'originFanficChapter' | 'originChapterVersionId'> {
-  const record = objectRecord(value, label)
-  return { id: nonEmpty(record['id'], `${label}.id`), subject: nonEmpty(record['subject'], `${label}.subject`), predicate: nonEmpty(record['predicate'], `${label}.predicate`), object: jsonValue(record['object'], `${label}.object`), validFromFanficChapter: positiveSafeInteger(record['validFromFanficChapter'], `${label}.validFromFanficChapter`), ...optionalPositiveInteger(record['validUntilFanficChapter'], `${label}.validUntilFanficChapter`, 'validUntilFanficChapter'), recordedAt: isoDate(record['recordedAt'], `${label}.recordedAt`) }
-}
-function parseLegacyKnowledge(value: unknown, label: string): Omit<FanficOverlayKnowledge, 'originFanficChapter' | 'originChapterVersionId'> {
-  const record = objectRecord(value, label); const stance = record['stance']; if (stance !== 'knows' && stance !== 'suspects' && stance !== 'believes-false') throw new Error(`${label}.stance is invalid`)
-  return { id: nonEmpty(record['id'], `${label}.id`), character: nonEmpty(record['character'], `${label}.character`), ...optionalNamedString(record['subject'], `${label}.subject`, 'subject'), ...optionalNamedString(record['predicate'], `${label}.predicate`, 'predicate'), ...optionalNamedString(record['object'], `${label}.object`, 'object'), summary: nonEmpty(record['summary'], `${label}.summary`), stance, fromFanficChapter: positiveSafeInteger(record['fromFanficChapter'], `${label}.fromFanficChapter`), recordedAt: isoDate(record['recordedAt'], `${label}.recordedAt`) }
-}
-function parseLegacyCharacter(value: unknown, label: string): Omit<FanficOverlayCharacterState, 'originFanficChapter' | 'originChapterVersionId'> { const record=objectRecord(value,label); return { id: nonEmpty(record['id'],`${label}.id`), character: nonEmpty(record['character'],`${label}.character`), summary: nonEmpty(record['summary'],`${label}.summary`), fromFanficChapter: positiveSafeInteger(record['fromFanficChapter'],`${label}.fromFanficChapter`), recordedAt: isoDate(record['recordedAt'],`${label}.recordedAt`) } }
-function parseLegacyRelationship(value: unknown, label: string): Omit<FanficOverlayRelationship, 'originFanficChapter' | 'originChapterVersionId'> { const record=objectRecord(value,label); return { id: nonEmpty(record['id'],`${label}.id`), subject: nonEmpty(record['subject'],`${label}.subject`), object: nonEmpty(record['object'],`${label}.object`), summary: nonEmpty(record['summary'],`${label}.summary`), fromFanficChapter: positiveSafeInteger(record['fromFanficChapter'],`${label}.fromFanficChapter`), recordedAt: isoDate(record['recordedAt'],`${label}.recordedAt`) } }
-function parseLegacyThread(value: unknown, label: string): Omit<FanficCausalThread, 'originFanficChapter' | 'originChapterVersionId'> { const record=objectRecord(value,label); const status=record['status']; if(status!=='open'&&status!=='resolved') throw new Error(`${label}.status is invalid`); return { id: nonEmpty(record['id'],`${label}.id`), summary: nonEmpty(record['summary'],`${label}.summary`), status, fromFanficChapter: positiveSafeInteger(record['fromFanficChapter'],`${label}.fromFanficChapter`), recordedAt: isoDate(record['recordedAt'],`${label}.recordedAt`), ...(record['resolvedAt']===undefined?{}:{ resolvedAt:isoDate(record['resolvedAt'],`${label}.resolvedAt`) }) } }
 
 function normalizeDelta(delta: FanficStateDelta): FanficStateDelta {
   const fanficChapter = positiveSafeInteger(delta.fanficChapter, 'delta.fanficChapter')
@@ -2966,7 +3004,7 @@ function validateClaim(
         && (edge.revealFromChapter ?? edge.validFromChapter) > canonCutoff)
       if (hidden) {
         return counterfactualCanon
-          ? { severity: 'warning', code: 'COUNTERFACTUAL_IDENTITY_UNESTABLISHED', message: 'Later canon reveals this identity, but that reveal is counterfactual after branch divergence. Persist a branch identity fact before using it as established truth.', claim }
+          ? { severity: 'warning', code: 'COUNTERFACTUAL_IDENTITY_UNESTABLISHED', message: `Later canon reveals this identity, but that reveal is counterfactual after branch divergence. Persist a branch identity fact before using it as established truth.`, claim }
           : { severity: 'error', code: 'PREMATURE_IDENTITY_REVEAL', message: `Identity claim about ${claim.subject} is a future reveal at this cutoff.`, claim }
       }
       return { severity: 'warning', code: 'IDENTITY_UNVERIFIED', message: `No revealed canon identity edge or structured branch fact verifies claim about ${claim.subject}.`, claim }
@@ -2974,11 +3012,10 @@ function validateClaim(
     case 'power': {
       if (branchPowerMatchesClaim(branch, claim)) return undefined
       if (snapshot.powers.some(power => powerMatchesClaim(power, claim))) return undefined
-      const future = pack.powers.some(power => powerMatchesClaim(power, claim)
-        && power.validFromChapter > canonCutoff && power.validFromChapter <= requestedCutoff)
+      const future = pack.powers.some(power => powerMatchesClaim(power, claim) && power.validFromChapter > canonCutoff && power.validFromChapter <= requestedCutoff)
       if (future) {
         return counterfactualCanon
-          ? { severity: 'warning', code: 'COUNTERFACTUAL_POWER_UNESTABLISHED', message: 'Later canon supports this power claim, but it is not binding after branch divergence. Persist the changed branch capability before relying on it.', claim }
+          ? { severity: 'warning', code: 'COUNTERFACTUAL_POWER_UNESTABLISHED', message: `Later canon supports this power claim, but it is not binding after branch divergence. Persist the changed branch capability before relying on it.`, claim }
           : { severity: 'error', code: 'PREMATURE_POWER_CLAIM', message: `Power claim about ${claim.subject} is only supported by later canon.`, claim }
       }
       return { severity: 'warning', code: 'POWER_UNVERIFIED', message: `No structured canon or branch power record verifies claim about ${claim.subject}.`, claim }
@@ -2995,41 +3032,28 @@ function earliestDivergencePoint(branch: FanficBranch): FanficDivergence | undef
 
 function mergeAuditSnapshots(base: CanonSnapshot, supplement: CanonSnapshot): CanonSnapshot {
   const merge = <T extends { readonly id: string }>(left: readonly T[], right: readonly T[]): T[] => {
-    const values = new Map(left.map(item => [item.id, item]))
-    for (const item of right) values.set(item.id, item)
-    return [...values.values()]
+    const values = new Map(left.map(item => [item.id, item])); for (const item of right) values.set(item.id, item); return [...values.values()]
   }
   return {
     ...base,
     asOfChapter: Math.max(base.asOfChapter, supplement.asOfChapter),
     spoilerFirewall: supplement.spoilerFirewall,
-    characterStates: merge(base.characterStates, supplement.characterStates),
-    facts: merge(base.facts, supplement.facts),
-    povKnowledge: merge(base.povKnowledge, supplement.povKnowledge),
-    identities: merge(base.identities, supplement.identities),
-    powers: merge(base.powers, supplement.powers),
-    relationships: merge(base.relationships, supplement.relationships),
-    mysteries: merge(base.mysteries, supplement.mysteries),
-    events: merge(base.events, supplement.events),
-    timelineRules: merge(base.timelineRules, supplement.timelineRules),
-    causalLinks: merge(base.causalLinks, supplement.causalLinks),
-    sourceExcerpts: base.sourceExcerpts,
+    characterStates: merge(base.characterStates, supplement.characterStates), facts: merge(base.facts, supplement.facts),
+    povKnowledge: merge(base.povKnowledge, supplement.povKnowledge), identities: merge(base.identities, supplement.identities), powers: merge(base.powers, supplement.powers),
+    relationships: merge(base.relationships, supplement.relationships), mysteries: merge(base.mysteries, supplement.mysteries), events: merge(base.events, supplement.events),
+    timelineRules: merge(base.timelineRules, supplement.timelineRules), causalLinks: merge(base.causalLinks, supplement.causalLinks), sourceExcerpts: base.sourceExcerpts,
   }
 }
 
 function extractDraftClaims(draft: string, entities: readonly string[]): FanficAuditClaim[] {
   const sentences = draft.match(/[^。！？!?\n]+[。！？!?]?/gu)?.map(item => item.trim()).filter(Boolean) ?? []
   const claims: FanficAuditClaim[] = []
-  const push = (claim: FanficAuditClaim): void => {
-    if (!claims.some(item => item.kind === claim.kind
-      && sameName(item.subject, claim.subject) && item.object === claim.object)) claims.push(claim)
-  }
+  const push = (claim: FanficAuditClaim): void => { if (!claims.some(item => item.kind === claim.kind && sameName(item.subject, claim.subject) && item.object === claim.object)) claims.push(claim) }
   for (const sentence of sentences) {
     const subject = entities.find(entity => entity.length > 0 && sentence.includes(entity))
     if (subject === undefined) continue
     const excerpt = sentence.length > 96 ? `${sentence.slice(0, 96)}…` : sentence
-    const explicitPower = /(施展|使出|催动|运转(?:真气|内力|功法|心法)|驱使|操纵|引动|发动(?:秘术|神通|阵法)|激发(?:神兵|法宝|符箓)|剑气|刀光|掌力|真气|内力|罡气|法相|神通|秘术|绝学)/u
-      .test(sentence)
+    const explicitPower = /(施展|使出|催动|运转(?:真气|内力|功法|心法)|驱使|操纵|引动|发动(?:秘术|神通|阵法)|激发(?:神兵|法宝|符箓)|剑气|刀光|掌力|真气|内力|罡气|法相|神通|秘术|绝学)/u.test(sentence)
       || (/(封住|镇压|摄取|牵引|冻结|焚烧)/u.test(sentence) && /(白雾|黑线|真气|内力|剑气|刀光|气机|神兵|法宝|符|阵)/u.test(sentence))
     if (explicitPower) push({ kind: 'power', subject, object: excerpt })
     if (/(知道|明白|意识到|察觉|发现|认出|确认|看出|猜到)/u.test(sentence)) push({ kind: 'knowledge', subject, object: excerpt })
@@ -3040,9 +3064,7 @@ function extractDraftClaims(draft: string, entities: readonly string[]): FanficA
   return claims
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
-}
+function escapeRegExp(value: string): string { return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&') }
 
 function auditClaimCovers(submitted: FanficAuditClaim, extracted: FanficAuditClaim): boolean {
   if (submitted.kind !== extracted.kind || !sameName(submitted.subject, extracted.subject)) return false
@@ -3050,11 +3072,7 @@ function auditClaimCovers(submitted: FanficAuditClaim, extracted: FanficAuditCla
   return extracted.object.includes(submitted.object) || submitted.object.includes(extracted.object) || submitted.object.length >= 2
 }
 
-function matchingBranchKnowledge(
-  branch: FanficBranch | undefined,
-  povCharacter: string,
-  claim: FanficAuditClaim,
-): readonly FanficOverlayKnowledge[] {
+function matchingBranchKnowledge(branch: FanficBranch | undefined, povCharacter: string, claim: FanficAuditClaim): readonly FanficOverlayKnowledge[] {
   if (branch === undefined) return []
   return branch.knowledge.filter(record => sameName(record.character, povCharacter)
     && record.subject !== undefined
@@ -3072,7 +3090,7 @@ function branchFactMatchesClaim(branch: FanficBranch | undefined, claim: FanficA
 
 function branchIdentityMatchesClaim(branch: FanficBranch | undefined, claim: FanficAuditClaim): boolean {
   if (branch === undefined) return false
-  return branch.facts.some((fact) => {
+  return branch.facts.some(fact => {
     if (!sameName(fact.subject, claim.subject)) return false
     if (claim.object !== undefined && !jsonContains(fact.object, claim.object)) return false
     if (claim.predicate !== undefined) return fact.predicate === claim.predicate
@@ -3083,7 +3101,7 @@ function branchIdentityMatchesClaim(branch: FanficBranch | undefined, claim: Fan
 
 function branchPowerMatchesClaim(branch: FanficBranch | undefined, claim: FanficAuditClaim): boolean {
   if (branch === undefined) return false
-  return branch.facts.some((fact) => {
+  return branch.facts.some(fact => {
     if (!sameName(fact.subject, claim.subject)) return false
     if (claim.object !== undefined && !jsonContains(fact.object, claim.object)) return false
     if (claim.predicate !== undefined) return fact.predicate === claim.predicate
@@ -3094,7 +3112,7 @@ function branchPowerMatchesClaim(branch: FanficBranch | undefined, claim: Fanfic
 
 function branchEstablishesReveal(branch: FanficBranch | undefined, povCharacter: string, term: string): boolean {
   if (branch === undefined) return false
-  const fact = branch.facts.find((record) => {
+  const fact = branch.facts.find(record => {
     const objectText = typeof record.object === 'string' ? record.object : JSON.stringify(record.object)
     return `${record.subject} ${record.predicate} ${objectText}`.includes(term)
       || (term.includes(record.subject) && objectText.length > 0 && term.includes(objectText))
@@ -3120,14 +3138,19 @@ function identityMatchesClaim(edge: CanonIdentityEdge, claim: FanficAuditClaim):
 }
 
 function powerMatchesClaim(power: CanonPowerState, claim: FanficAuditClaim): boolean {
-  const object = claim.object
   return sameName(power.subject, claim.subject)
-    && (object === undefined || power.realm === object
-      || (power.capabilities ?? []).some(capability => capability.includes(object)))
+    && (claim.object === undefined || power.realm === claim.object || (power.capabilities ?? []).some(capability => capability.includes(claim.object!)))
 }
 
 function jsonContains(value: FanficJsonValue, needle: string): boolean {
   return (typeof value === 'string' ? value : JSON.stringify(value)).includes(needle)
+}
+
+const DEFAULT_WRITING_CONTRACT: FanficWritingContract = {
+  language: 'zh-CN',
+  minHanChars: 2500,
+  maxHanChars: 4000,
+  defaultStyleMode: 'auto',
 }
 
 const DEFAULT_AUTHOR_INTENT: FanficAuthorIntent = {
@@ -3139,6 +3162,7 @@ const DEFAULT_AUTHOR_INTENT: FanficAuthorIntent = {
   characterPriorities: [],
   forbiddenOutcomes: [],
   styleNotes: [],
+  writingContract: DEFAULT_WRITING_CONTRACT,
 }
 
 type CanonRecordWithProvenance = { readonly id: string; readonly provenance?: CanonProvenance }
@@ -3194,9 +3218,7 @@ function recordsForKind(pack: LoadedCanonPack, kind: CanonEnrichmentKind): reado
 
 function recordProvenanceChapter(record: CanonRecordWithProvenance): number | undefined { return record.provenance?.chapter }
 
-function emptyStoryDirector(): FanficStoryDirectorState {
-  return { arcs: [], threads: [], foreshadows: [], horizon: [], mysteryTruths: [], inventions: [], reconciliation: [] }
-}
+function emptyStoryDirector(): FanficStoryDirectorState { return { arcs: [], threads: [], foreshadows: [], horizon: [], mysteryTruths: [], inventions: [], reconciliation: [] } }
 
 function normalizeStoryDirector(value: FanficStoryDirectorState | unknown): FanficStoryDirectorState {
   const record = value === undefined ? {} : objectRecord(value, 'storyDirector')
@@ -3233,15 +3255,7 @@ function normalizeStoryDirector(value: FanficStoryDirectorState | unknown): Fanf
     for (const id of plan.advanceThreads) if (!threadIds.has(id)) throw new Error(`chapter plan ${plan.fanficChapter} references unknown story thread ${JSON.stringify(id)}`)
     for (const id of [...plan.plantForeshadows, ...plan.payoffForeshadows]) if (!foreshadowIds.has(id)) throw new Error(`chapter plan ${plan.fanficChapter} references unknown foreshadow ${JSON.stringify(id)}`)
   }
-  return {
-    arcs,
-    threads,
-    foreshadows,
-    horizon: [...horizon].sort((a, b) => a.fanficChapter - b.fanficChapter),
-    mysteryTruths,
-    inventions,
-    reconciliation,
-  }
+  return { arcs, threads, foreshadows, horizon: [...horizon].sort((a, b) => a.fanficChapter - b.fanficChapter), mysteryTruths, inventions, reconciliation }
 }
 
 function parseDirectorReconciliation(value: unknown, label: string): FanficDirectorReconciliation {
@@ -3312,7 +3326,9 @@ function parseMysteryTruth(value: unknown, label: string): FanficMysteryTruth {
     id: nonEmpty(record['id'], `${label}.id`), status: enumString(record['status'], `${label}.status`, ['planned', 'active', 'revealed', 'retired'] as const),
     label: nonEmpty(record['label'], `${label}.label`), secretTruth: nonEmpty(record['secretTruth'], `${label}.secretTruth`), mechanism: nonEmpty(record['mechanism'], `${label}.mechanism`),
     allowedClues: stringArray(record['allowedClues'] ?? [], `${label}.allowedClues`), falseLeads: stringArray(record['falseLeads'] ?? [], `${label}.falseLeads`),
-    revealConditions: stringArray(record['revealConditions'] ?? [], `${label}.revealConditions`), plannedPayoff: nonEmpty(record['plannedPayoff'], `${label}.plannedPayoff`), relatedThreads: stringArray(record['relatedThreads'] ?? [], `${label}.relatedThreads`),
+    revealConditions: stringArray(record['revealConditions'] ?? [], `${label}.revealConditions`),
+    protectedRevealTerms: stringArray(record['protectedRevealTerms'] ?? [], `${label}.protectedRevealTerms`),
+    plannedPayoff: nonEmpty(record['plannedPayoff'], `${label}.plannedPayoff`), relatedThreads: stringArray(record['relatedThreads'] ?? [], `${label}.relatedThreads`),
   }
 }
 
@@ -3352,12 +3368,8 @@ function enumString<const T extends readonly string[]>(value: unknown, label: st
   return value as T[number]
 }
 
-function optionalPositiveValue(value: unknown, label: string): number | undefined {
-  return value === undefined ? undefined : positiveSafeInteger(value, label)
-}
-function optionalPositiveNamedValue(value: unknown, label: string, key: string): Record<string, number> {
-  return value === undefined ? {} : { [key]: positiveSafeInteger(value, label) }
-}
+function optionalPositiveValue(value: unknown, label: string): number | undefined { return value === undefined ? undefined : positiveSafeInteger(value, label) }
+function optionalPositiveNamedValue(value: unknown, label: string, key: string): Record<string, number> { return value === undefined ? {} : { [key]: positiveSafeInteger(value, label) } }
 
 function normalizeAuthorIntent(value: Partial<FanficAuthorIntent> | unknown): FanficAuthorIntent {
   if (value === undefined || value === null) return DEFAULT_AUTHOR_INTENT
@@ -3373,6 +3385,23 @@ function normalizeAuthorIntent(value: Partial<FanficAuthorIntent> | unknown): Fa
     characterPriorities: optionalStringsOrEmpty(record['characterPriorities'], 'authorIntent.characterPriorities'),
     forbiddenOutcomes: optionalStringsOrEmpty(record['forbiddenOutcomes'], 'authorIntent.forbiddenOutcomes'),
     styleNotes: optionalStringsOrEmpty(record['styleNotes'], 'authorIntent.styleNotes'),
+    writingContract: normalizeWritingContract(record['writingContract']),
+  }
+}
+
+function normalizeWritingContract(value: unknown): FanficWritingContract {
+  if (value === undefined || value === null) return DEFAULT_WRITING_CONTRACT
+  const record = objectRecord(value, 'authorIntent.writingContract')
+  const language = record['language'] ?? DEFAULT_WRITING_CONTRACT.language
+  if (language !== 'zh-CN') throw new Error('authorIntent.writingContract.language must be zh-CN')
+  const minHanChars = positiveSafeInteger(record['minHanChars'] ?? DEFAULT_WRITING_CONTRACT.minHanChars, 'authorIntent.writingContract.minHanChars')
+  const maxHanChars = positiveSafeInteger(record['maxHanChars'] ?? DEFAULT_WRITING_CONTRACT.maxHanChars, 'authorIntent.writingContract.maxHanChars')
+  if (maxHanChars < minHanChars) throw new Error('authorIntent.writingContract.maxHanChars must be >= minHanChars')
+  return {
+    language,
+    minHanChars,
+    maxHanChars,
+    defaultStyleMode: normalizeNarrativeStyleMode(record['defaultStyleMode'] ?? DEFAULT_WRITING_CONTRACT.defaultStyleMode),
   }
 }
 
@@ -3395,18 +3424,7 @@ function validateBranchId(value: string): void {
 }
 
 async function loadGraphDirectory(graphDir: string): Promise<LoadedGraphRows> {
-  const [
-    facts,
-    knowledge,
-    characters,
-    identities,
-    powers,
-    relationships,
-    mysteries,
-    events,
-    timelineRules,
-    causalLinks,
-  ] = await Promise.all([
+  const [facts, knowledge, characters, identities, powers, relationships, mysteries, events, timelineRules, causalLinks] = await Promise.all([
     readOptionalNdjson(join(graphDir, 'facts.ndjson'), parseFact),
     readOptionalNdjson(join(graphDir, 'knowledge.ndjson'), parseKnowledge),
     readOptionalNdjson(join(graphDir, 'characters.ndjson'), parseCharacter),
@@ -3473,15 +3491,8 @@ function expandContextFromPack(pack: LoadedCanonPack, request: CanonContextExpan
     const knownEntities = new Set<string>()
     for (const state of pack.characters) if (state.validFromChapter <= cutoff) knownEntities.add(state.name)
     for (const relation of pack.relationships) { knownEntities.add(relation.subject); knownEntities.add(relation.object) }
-    for (const edge of pack.identities) {
-      if ((edge.revealFromChapter ?? edge.validFromChapter) <= cutoff) {
-        knownEntities.add(edge.subject)
-        knownEntities.add(edge.object)
-      }
-    }
-    for (const event of pack.events) {
-      if (event.chapter <= cutoff) for (const participant of event.participants ?? []) knownEntities.add(participant)
-    }
+    for (const edge of pack.identities) if ((edge.revealFromChapter ?? edge.validFromChapter) <= cutoff) { knownEntities.add(edge.subject); knownEntities.add(edge.object) }
+    for (const event of pack.events) if (event.chapter <= cutoff) for (const participant of event.participants ?? []) knownEntities.add(participant)
     for (const fact of visibleFacts) { knownEntities.add(fact.subject); if (typeof fact.object === 'string' && fact.object.length <= 40) knownEntities.add(fact.object) }
     for (const link of pack.causalLinks) {
       if (link.introducedByChapter > cutoff) continue
@@ -3536,10 +3547,7 @@ function enrichmentFilename(kind: CanonEnrichmentKind): string {
   }
 }
 
-function materializeEnrichmentRecord(
-  candidate: CanonEnrichmentCandidate,
-  source: CanonProvenance,
-): { readonly id: string } & Record<string, unknown> {
+function materializeEnrichmentRecord(candidate: CanonEnrichmentCandidate, source: CanonProvenance): { readonly id: string } & Record<string, unknown> {
   const raw = { ...candidate.payload, provenance: source }
   switch (candidate.kind) {
     case 'fact': return parseFact(raw, 'candidate.payload') as CanonFact & Record<string, unknown>
@@ -3581,18 +3589,8 @@ function provenanceWithExcerpt(sourceSha256: string, chapter: CanonChapter, exce
 }
 function enrichmentRecordId(record: { readonly id: string }): string { return nonEmpty(record.id, 'enrichment.id') }
 function canonRecordIdExists(pack: LoadedCanonPack, id: string): boolean {
-  return [
-    pack.facts,
-    pack.knowledge,
-    pack.characters,
-    pack.identities,
-    pack.powers,
-    pack.relationships,
-    pack.mysteries,
-    pack.events,
-    pack.timelineRules,
-    pack.causalLinks,
-  ].some(records => records.some(record => record.id === id))
+  return [pack.facts, pack.knowledge, pack.characters, pack.identities, pack.powers, pack.relationships, pack.mysteries, pack.events, pack.timelineRules, pack.causalLinks]
+    .some(records => records.some(record => record.id === id))
 }
 
 async function readJson(path: string): Promise<unknown> { return JSON.parse(await readFile(path, 'utf8')) }
@@ -3620,13 +3618,7 @@ function parseNdjson<T>(text: string, path: string, parse: (value: unknown, labe
   return rows
 }
 
-function extractCharacterVoiceSample(
-  sourceSha256: string,
-  chapter: CanonChapter,
-  character: string,
-  maxChars: number,
-  maxDialogueFragments: number,
-): CharacterVoiceSample | undefined {
+function extractCharacterVoiceSample(sourceSha256: string, chapter: CanonChapter, character: string, maxChars: number, maxDialogueFragments: number): CharacterVoiceSample | undefined {
   const at = chapter.text.indexOf(character)
   if (at < 0) return undefined
   const radius = Math.max(80, Math.floor(maxChars / 2))
@@ -3712,18 +3704,10 @@ function stringArray(value: unknown, label: string): string[] { if (!Array.isArr
 function sha256(value: unknown, label: string): string { const text = nonEmpty(value, label); if (!/^[0-9a-f]{64}$/iu.test(text)) throw new Error(`${label} must be a sha256 hex string`); return text.toLowerCase() }
 function isoDate(value: unknown, label: string): string { const text = nonEmpty(value, label); if (Number.isNaN(Date.parse(text))) throw new Error(`${label} must be an ISO date string`); return text }
 function isNodeError(error: unknown): error is NodeJS.ErrnoException { return error instanceof Error && 'code' in error }
-function optionalString(value: unknown, key: string): Record<string, string> {
-  return value === undefined ? {} : { [key]: nonEmpty(value, key) }
-}
-function optionalNamedString(value: unknown, label: string, key: string): Record<string, string> {
-  return value === undefined ? {} : { [key]: nonEmpty(value, label) }
-}
-function optionalStringArray(value: unknown, label: string, key: string): Record<string, readonly string[]> {
-  return value === undefined ? {} : { [key]: stringArray(value, label) }
-}
-function optionalPositiveInteger(value: unknown, label: string, key: string): Record<string, number> {
-  return value === undefined ? {} : { [key]: positiveSafeInteger(value, label) }
-}
+function optionalString(value: unknown, key: string): Record<string, string> { return value === undefined ? {} : { [key]: nonEmpty(value, key) } }
+function optionalNamedString(value: unknown, label: string, key: string): Record<string, string> { return value === undefined ? {} : { [key]: nonEmpty(value, label) } }
+function optionalStringArray(value: unknown, label: string, key: string): Record<string, readonly string[]> { return value === undefined ? {} : { [key]: stringArray(value, label) } }
+function optionalPositiveInteger(value: unknown, label: string, key: string): Record<string, number> { return value === undefined ? {} : { [key]: positiveSafeInteger(value, label) } }
 function parseArray<T>(value: unknown, label: string, parser: (item: unknown, itemLabel: string) => T): T[] { if (!Array.isArray(value)) throw new Error(`${label} must be an array`); return value.map((item, index) => parser(item, `${label}[${index}]`)) }
 function jsonValue(value: unknown, label: string): FanficJsonValue {
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return value

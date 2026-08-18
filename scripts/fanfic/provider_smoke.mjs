@@ -31,17 +31,23 @@ const provider = new LocalFanficProvider({
   authorContextBranchRecordLimit: 24,
   authorContextSourceExcerptLimit: 2,
   authorContextMaxJsonChars: 40000,
+  proseQualityUltraShortHanChars: 8,
+  proseQualityMaxUltraShortRun: 8,
+  proseQualityTailUltraShortRatio: 0.6,
+  proseQualityMinBigramDiversity: 0.58,
+  proseQualityTailFillerLimit: 6,
 })
 
 
-async function auditReceipts(branch, fanficChapter, draft, asOfChapter = 150) {
-  const canon = await provider.audit({ draft, asOfChapter, povCharacter: '孟奇', branchId: branch.id, fanficChapter, participants: [], claims: [] })
-  const style = await provider.auditNarrativeStyle({ draft, asOfChapter, mode: 'auto', query: '', participants: [], branchId: branch.id, fanficChapter, sampleLimit: 2, antiCopyMinPhraseChars: 24, antiCopyMaxFindings: 4 })
-  const copy = await provider.antiCopyGuard({ draft, asOfChapter, branchId: branch.id, fanficChapter, minPhraseChars: 24, maxFindings: 4 })
+async function auditReceipts(branch, fanficChapter, text, asOfChapter = 150) {
+  const draft = await provider.stageDraft({ branchId: branch.id, fanficChapter, text })
+  const canon = await provider.audit({ draftId: draft.id, asOfChapter, povCharacter: '孟奇', participants: [], claims: [] })
+  const style = await provider.auditNarrativeStyle({ draftId: draft.id, asOfChapter, mode: 'auto', query: '', participants: [], sampleLimit: 2, antiCopyMinPhraseChars: 24, antiCopyMaxFindings: 4 })
+  const copy = await provider.antiCopyGuard({ draftId: draft.id, asOfChapter, minPhraseChars: 24, maxFindings: 4 })
   assert(canon.ok && canon.auditReceipt, `canon audit receipt missing: ${JSON.stringify(canon.issues)}`)
-  assert(style.ok && style.auditReceipt, `style audit receipt missing: ${JSON.stringify(style.deviations)}`)
+  assert(style.ok && style.auditReceipt, `style audit receipt missing: ${JSON.stringify({ deviations: style.deviations, quality: style.quality, length: style.lengthContract })}`)
   assert(copy.ok && copy.auditReceipt, `anti-copy audit receipt missing: ${JSON.stringify(copy.findings)}`)
-  return [canon.auditReceipt.id, style.auditReceipt.id, copy.auditReceipt.id]
+  return { draftId: draft.id, auditReceiptIds: [canon.auditReceipt.id, style.auditReceipt.id, copy.auditReceipt.id] }
 }
 
 try {
@@ -78,7 +84,7 @@ try {
     name: 'smoke divergence',
     baseChapter: 100,
     notes: 'keyless smoke',
-    authorIntent: { premise: 'OC survives and changes the board', divergenceMode: 'soft-divergence' },
+    authorIntent: { premise: 'OC survives and changes the board', divergenceMode: 'soft-divergence', writingContract: { language: 'zh-CN', minHanChars: 10, maxHanChars: 5000, defaultStyleMode: 'auto' } },
   })
   branch = await provider.updateIntent({
     branchId: branch.id,
@@ -92,6 +98,7 @@ try {
       characterPriorities: ['孟奇 character logic'],
       forbiddenOutcomes: ['railroad canon'],
       styleNotes: ['show consequences through outsiders when useful'],
+      writingContract: { language: 'zh-CN', minHanChars: 10, maxHanChars: 5000, defaultStyleMode: 'auto' },
     },
   })
   branch = await provider.recordDivergence({
@@ -187,11 +194,12 @@ try {
   assert(context.storyDirector?.activeThreads.some(thread => thread.id === 'thread-who-notices') === true, 'author context did not include Story Director state')
   assert(context.narrativeStyle.samples.every(sample => sample.chapter <= 150), 'author context style evidence crossed canon cutoff')
   assert(context.narrativeStyle.guidance.length > 0, 'author context did not include narrative style guidance')
+  assert(context.version === 4 && context.telemetry.serializedChars === JSON.stringify(context).length, 'author context v4 telemetry mismatch')
 
   const previousRevision = branch.revision
   const chapter2Draft = '孟奇确认OC仍然活着，并把这件事记在心里。'
   branch = await provider.applyDelta({
-    branchId: branch.id, expectedRevision: previousRevision, draft: chapter2Draft, auditReceiptIds: await auditReceipts(branch, 2, chapter2Draft),
+    branchId: branch.id, expectedRevision: previousRevision, ...(await auditReceipts(branch, 2, chapter2Draft)),
     delta: {
       fanficChapter: 2,
       chapterSummary: 'OC与孟奇会面。',
@@ -234,7 +242,7 @@ try {
 
   const chapter3Draft = '分支中的新证据使孟奇确认了一个身份事实。'
   branch = await provider.applyDelta({
-    branchId: branch.id, expectedRevision: branch.revision, draft: chapter3Draft, auditReceiptIds: await auditReceipts(branch, 3, chapter3Draft, 928),
+    branchId: branch.id, expectedRevision: branch.revision, ...(await auditReceipts(branch, 3, chapter3Draft, 928)),
     delta: {
       fanficChapter: 3,
       facts: [{ subject: '真慧', predicate: 'identity_is', object: '杨戬', validFromFanficChapter: 3 }],
@@ -257,7 +265,7 @@ try {
   assert(branchEstablishedAudit.ok, `branch-established reveal should pass audit: ${JSON.stringify(branchEstablishedAudit.issues)}`)
   let staleRevisionRejected = false
   try {
-    await provider.applyDelta({ branchId: branch.id, expectedRevision: previousRevision, draft: 'stale', auditReceiptIds: ['x','y','z'], delta: { fanficChapter: 3 } })
+    await provider.applyDelta({ branchId: branch.id, expectedRevision: previousRevision, draftId: 'draft-00000000-0000-4000-8000-000000000000', auditReceiptIds: ['x','y','z'], delta: { fanficChapter: 3 } })
   } catch {
     staleRevisionRejected = true
   }

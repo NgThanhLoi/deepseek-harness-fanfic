@@ -452,6 +452,15 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'tool-fs executes read/write/edit through ctx.fs; fs-sandbox fences mutations by the shared sandbox mode; fs-observation-policy contributes observed-state checks through the fs/* event gate.',
   },
   {
+    key: 'fanfic',
+    pkg: 'fanfic',
+    title: 'Immersion fanfic authoring seam',
+    mode: 'seam',
+    implementations: ['fanfic-local'],
+    consumers: ['tool-fanfic'],
+    note: 'One registered provider serves immutable canon retrieval and transactional mutable branches; tool-fanfic exposes the model-facing tools and is composed only through the fanfic-authoring patch bundle.',
+  },
+  {
     key: 'compaction',
     pkg: 'compaction',
     title: 'Compaction seam',

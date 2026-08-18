@@ -21,6 +21,14 @@ Canon 与 fanfic branch 使用不同时间轴。`asOfChapter` 限制原作来源
 
 `AuthorContext` 现在还包含带剧透保护的 graph expansion 与来源支撑的人物 dossier；当提供 branch 与 fanfic chapter 时，还会携带紧凑 Story Director packet，把当前 scene 与 active arc、到期 thread、存活 foreshadow、近期已接受章节、未解决 divergence 后果及滚动 chapter horizon 对齐。因此 Composer 不必在调用前就猜中所有相关实体或长篇叙事承诺。
 
+## 质量强制作者工作流（v0.7）
+
+Branch format 升为 v3，`AuthorContext` 升为 version 4。每个分支持有 durable `FanficWritingContract`；已接受 chapter version 会绑定 staged `draftId` 与 `draftHash`。Provider 暴露 `stageDraft()`、`updateDraft()` 与 `getDraft()`，让三类 settlement audit 和最终 commit 都引用同一份持久 prose identity，而不是反复复制整章正文。
+
+Audit receipt 继续绑定 draft/revision/branch，并新增 Writing Contract 绑定。Provider 可以在发放 style receipt 前阻止 prose degeneration，也可以在发放 canon receipt 前强制 author-private mystery reveal condition。Rewrite 的 `inherit`/`replace`、历史 ownership 保护与 Story Director reconciliation 继续作为硬语义。
+
+`AuthorContext` v4 返回 serialization telemetry（实际字符数、hard budget、compaction level 与被省略类别），使 context scaling 可以直接测量而非从日志估算。
+
 ## Model Experience
 
 间接地，通过 `@deepseek-ai/dsh-tool-fanfic`；该 Consumer 负责 fanfic prompt policy、tool schema 与渲染结果。
@@ -35,9 +43,3 @@ Canon 与 fanfic branch 使用不同时间轴。`asOfChapter` 限制原作来源
 - **管理型 branch read 不限制 fanfic 时间** —— `getBranch()` 为管理/CAS 写入有意返回完整状态；场景创作必须走 `authorContext(..., fanficChapter)`。
 - **Enrichment 校验证据，不等于校验文学解释** —— Provider 能证明引文确实存在并验证结构；语义暧昧的抽取仍可增加第二模型或人工复核。
 - **风格指标不是作者仿写器** — 这些指标只做作品级节奏与场景模式诊断；文学质量、角色口吻与细微语感仍需模型结合证据判断。
-
-## 事务化作者工作流（v0.6）
-
-Branch format 仍为 v2，`AuthorContext` 升级为 version 3。章节结算现在接收与最终稿绑定的 audit receipt，并要求显式 rewrite 语义。`inherit` 会保留上一 active version 拥有的章节结构化状态，除非按 record id 明确删除；`replace` 只有在显式确认丢弃状态后才会清空旧状态。ownership 校验禁止后续章节静默回填前面章节。
-
-Service Definition 还暴露 Story Director reconciliation 与 active chapter-state inspection。重写会产生 reconciliation work，直到作者更新受影响的规划并显式关闭。Provider 还必须让安全 author packet 受 deployment policy 约束；local provider 使用序列化 hard size ceiling，被压缩掉的 evidence 通过显式研究操作按需获取。

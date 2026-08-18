@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const EXPECTED_API_VERSION = '0.6.0'
+const EXPECTED_API_VERSION = '0.7.0'
 const repo = resolve(fileURLToPath(new URL('../..', import.meta.url)))
 const sourcePath = resolve(repo, 'packages/fanfic/tool-fanfic/src/index.ts')
 const builtPath = resolve(repo, 'packages/fanfic/tool-fanfic/lib/index.js')

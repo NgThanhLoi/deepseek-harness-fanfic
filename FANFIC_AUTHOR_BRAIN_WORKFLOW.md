@@ -57,10 +57,11 @@ For fanfic chapter N:
 
 Only after the human/user accepts the exact final draft:
 
-1. Run `fanfic_audit`, `fanfic_style_audit`, and `anti_copy_guard` on that exact draft with the same branch name/id, `fanficChapter`, and current branch revision. All three must return passing audit receipts.
-2. Call `fanfic_apply_delta` with the exact same draft, the three receipt ids, the chapter summary, and newly established branch facts/knowledge/character/relationship/causal state. Receipts are draft/revision-bound and are consumed after a successful commit.
-3. Pass `resolveCausalThreadIds` only for existing divergence consequences actually settled by this accepted chapter.
-4. The matching Story Director horizon entry becomes `accepted`. A rewrite creates a durable reconciliation issue; update affected arc/thread/foreshadow/horizon metadata and close it with `story_reconciliation_resolve` before planning later chapters.
+1. Stage the accepted prose once with `fanfic_draft_stage`. Keep the returned `draftId`; after any revision use `fanfic_draft_update` so the same draft identity receives a new hash/revision.
+2. Run `fanfic_audit`, `fanfic_style_audit`, and `anti_copy_guard` with that `draftId`. All three must return passing audit receipts for the staged hash, branch revision, and durable Writing Contract.
+3. Call `fanfic_apply_delta` with the `draftId`, the three receipt ids, the chapter summary, and newly established branch facts/knowledge/character/relationship/causal state. Receipts are consumed after a successful commit.
+4. Pass `resolveCausalThreadIds` only for existing divergence consequences actually settled by this accepted chapter.
+5. The matching Story Director horizon entry becomes `accepted`. A rewrite creates a durable reconciliation issue; update affected arc/thread/foreshadow/horizon metadata and close it with `story_reconciliation_resolve` before planning later chapters.
 
 Do not persist brainstorms, rejected drafts, audit-failing drafts, or a draft changed after its audits.
 
@@ -68,7 +69,7 @@ Do not persist brainstorms, rejected drafts, audit-failing drafts, or a draft ch
 
 Before rewriting fanfic chapter N, inspect `fanfic_chapter_state` and always pass `fanficChapter=N` to safe context/audit tools. Choose a rewrite transaction explicitly. `rewriteMode=inherit` carries the previous active chapter-owned structured state into the replacement and lets the caller remove specific records through `dropInheritedRecordIds`; use it when prose changes but most established state remains valid. `rewriteMode=replace` starts from no inherited chapter state and requires `confirmDroppedState=true` when it would discard active structured records.
 
-Branch format v2 still creates a new chapter version and supersedes the old one. While composing/auditing the replacement, state produced by chapter N is excluded from the safe author-facing projection, preventing self-contamination. A later chapter cannot silently recreate or backfill earlier chapter-owned facts; rewrite the owning chapter instead. Causal-thread resolution remains a chapter-version effect, so rewriting the resolving chapter can reopen the earlier thread. Story Director remains author planning metadata, never POV knowledge.
+Branch format v3 creates a new chapter version and supersedes the old one. While composing/auditing the replacement, state produced by chapter N is excluded from the safe author-facing projection, preventing self-contamination. A later chapter cannot silently recreate or backfill earlier chapter-owned facts; rewrite the owning chapter instead. Causal-thread resolution remains a chapter-version effect, so rewriting the resolving chapter can reopen the earlier thread. Story Director remains author planning metadata, never POV knowledge.
 
 ## Narrative style loop
 
@@ -76,13 +77,13 @@ The style subsystem is deliberately evidence-first and non-imitative. `style/sty
 
 Do not optimize blindly for a numeric score. Use the metrics as broad diagnostics. Character-specific wording still comes from `character_voice_context`; scene truth still comes from canon/branch state. Before final prose, `fanfic_style_audit` combines metric drift warnings with corpus-wide exact-overlap detection. Future-canon overlap is detected without exposing the future chapter location.
 
-## v0.6 transactional author workflow rules
+## v0.7 quality-enforced author workflow rules
 
-- Start every live authoring run with `fanfic_status` and require `toolApiVersion=0.6.0`, `branchFormatVersion=2`, and `authorContextVersion=3`. After `pnpm run build`, `node scripts/fanfic/verify_runtime_bundle.mjs` must pass before attaching the model.
-- Prefer a unique branch **name** in model-authored tool calls. UUIDs remain valid but are no longer necessary; this removes transcription errors that previously caused a model to lose Author Context and hallucinate branch continuity.
-- `fanfic_apply_delta` is a commit gate, not a best-effort persistence call. Canon/style/anti-copy receipts must all match the exact final draft, branch, fanfic chapter, and current revision. A failed audit, stale revision, changed draft, reused receipt, or missing receipt blocks settlement.
-- Rewrites must declare `inherit` or `replace`. Inspect `fanfic_chapter_state` first. `inherit` preserves old structured chapter state unless explicit record ids are dropped; `replace` discards it only with explicit dropped-state confirmation. Never repair an earlier chapter by writing historical ownership fields from a later chapter.
-- A rewrite opens a Story Director reconciliation issue. Update affected horizon/thread/foreshadow/arc metadata with granular tools and resolve the issue before continuing. Director plans are author state; they do not silently follow prose rewrites unless reconciled.
-- `fanfic_audit` independently extracts risky power/knowledge/identity/world claims. Ordinary physical actions and mere mentions of words such as `身份牌` should not be promoted to supernatural/identity claims without stronger assertion cues; material uncovered claims still require evidence.
-- Core style drift in dialogue density, sentence rhythm, paragraph rhythm, or excessive very-short paragraphs can be `revision-required`. Such a style audit is not eligible for a passing receipt. Han-character length constraints remain hard acceptance conditions.
-- `author_context` is a bounded working set. The Provider compacts evidence, structured arrays, dossiers, branch rows, and Director rows in stages until the configured JSON-character hard ceiling is met; omitted evidence stays available through explicit research tools.
+- Start every live authoring run with `fanfic_status` and require `toolApiVersion=0.7.0`, `branchFormatVersion=3`, and `authorContextVersion=4`. After `pnpm run build`, `node scripts/fanfic/verify_runtime_bundle.mjs` must pass before attaching the model.
+- Every branch owns a durable `writingContract` (default `zh-CN`, 2500–4000 Han characters, style mode `auto`). A staged branch draft is audited against that contract automatically; per-call length arguments cannot weaken it.
+- Stage final prose with `fanfic_draft_stage`; use only its `draftId` for the three commit audits and `fanfic_apply_delta`. `fanfic_draft_update` changes the hash/revision and invalidates earlier receipts without making the model re-copy the full chapter through every tool call.
+- `fanfic_style_audit` now includes a deterministic Prose Quality Guard. Configurable hard signals cover long runs of ultra-short paragraphs, tail collapse, repeated sentences, Han-bigram diversity collapse, and filler/padding cadence. `revision-required` quality findings cannot issue a style receipt.
+- Original mystery truth is an enforceable author constraint. `mystery_truth_upsert` records `protectedRevealTerms` and `revealConditions`; a full reveal must be declared to `fanfic_audit`, name a registered satisfied condition, and provide exact short evidence excerpts that occur in the staged draft. Unauthorized mystery payoff settlement is rejected.
+- Rewrites keep the v0.6 `inherit`/`replace`, dropped-state confirmation, backfill rejection, and Director reconciliation semantics. Chapter versions now bind the accepted `draftId` and `draftHash`.
+- `author_context` version 4 includes telemetry: actual serialized chars, configured budget, compaction level, and omitted evidence/record counts. The budget remains a hard ceiling.
+- For reviewability, `node scripts/fanfic/export_live_review.mjs --state-dir ... --branch ... --out ...` exports final branch state, active-only projection, chapter versions, Story Director, Mystery Truth Ledger, Invention Registry, referenced staged drafts, remaining receipts, and a machine-readable manifest. Optional redacted session/context directories can be copied verbatim; the exporter never copies environment variables or credentials.

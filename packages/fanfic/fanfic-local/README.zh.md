@@ -4,6 +4,10 @@
 
 `ctx.fanfic` 的文件系统 Provider。它读取不可变原作 canon 与单独持久化的 verified-enrichment overlay，在检索前执行叙事截止，组合作者智能，并用原子 compare-and-set snapshot 存储可变同人分支。
 
+## Configuration
+
+本地 Provider 对来源结果/摘录、结构化记录、自动 author-context 扩展/搜索/dossier/evidence、最近的 Story Director 摘要、每个 voice sample 的 dialogue fragment、style-reference chapter 数量、style excerpt 大小、anti-copy draft/finding 上限、style-deviation 比例、Author Context 硬预算与 Prose Quality Guard 阈值采用显式上限。bundle 拥有随附的值，部署策略不会藏在 Provider 代码中。Story Director horizon 等业务请求仍在 `ctx.fanfic` 边界显式传递。
+
 ## Canon pack 与 verified enrichment
 
 必需 pack 文件为 `manifest.json`、`source.json`、`chapters.ndjson`。`graph/` 下可选基础结构化文件包括 `facts.ndjson`、`knowledge.ndjson`、`characters.ndjson`、`identities.ndjson`、`powers.ndjson`、`relationships.ndjson`、`mysteries.ndjson`、`events.ndjson`、`timeline-rules.ndjson`、`causality.ndjson`。
@@ -26,11 +30,29 @@ Provider 还持久化 `<stateDir>/enrichment/coverage.ndjson`。Checkpoint 以�
 
 `assessPower()` 返回角色能力状态、体系规则、timeline rule 与来源证据，只约束场景，不根据境界标签武断判胜负。`timelineContext()` 把叙事章节截止与 worldline/历史规则分开。`impactScan()` 查找相关 canon 因果链接/事件、邻接实体和未解决分支因果线程，并明确只做 dependency scan，不冒充预言。
 
+## Narrative Style Bank 与防复制
+
+可选的 `style/style-bank.json` 是绑定 source SHA 与逐章 SHA 的无正文派生索引，只保存句长、段落长度、对话比例、问号/感叹号/省略号比例以及场景模式启发式分数，不保存长篇“模仿样本”。`scripts/fanfic/build_style_bank.py` 可以从 `chapters.ndjson` 重建；文件缺失时 Provider 会在内存中生成等价数据。
+
+`narrativeStyleContext()` 会先应用 `asOfChapter` 再选择参考章节，返回作品级节奏指标、少量 cutoff 内证据窗口以及 branch 的 `authorIntent.styleNotes`。它用于控制节奏、对话/叙述平衡、段落密度和悬念强度，而不是要求精确仿写仍在世作者。
+
+`antiCopyGuard()` 会把草稿与完整不可变 canon 做规范化后的精确短语重合检查。为了抓到模型记忆中的原文，它也扫描 cutoff 后的章节，但若命中未来 canon，只报告 `beyondCutoff=true` 而不泄露章节位置。`auditNarrativeStyle()` 会组合 metric drift、durable Han-length、Prose Quality Guard 与 exact-overlap；一般 drift 可以只是 advisory，但 revision-required 核心 drift、degeneration、长度失败或 exact overlap 都不能产生 settlement receipt。
+
 ## Branch storage
 
 分支位于 `<stateDir>/branches/<FanficBranchId>.json`。Divergence、作者意图替换、Story Director 替换与 Observer/Reflector delta 都要求预期 revision。分支拥有独立叙事时钟；branch-aware context/audit 会隐藏未来同人章节状态。记录 divergence 后，后续原作只作为反事实参考，除非分支状态独立重新建立相应事实。
 
 `storyDirector` 是持久化作者元数据，保存 arc、带优先级的 story thread、foreshadow/payoff 承诺和滚动 chapter horizon。`storyDirectorContext()` 派生活跃/到期事项与确定性 attention，例如已经过期的 planted clue，或高优先级 thread 没被 horizon advance。Plan 不是世界真相。`fanfic_apply_delta` 接受章节后会自动把对应 horizon 项标为 accepted，并可按 id 真正 resolve 已存在的 branch causal thread，而不是追加一条彼此无关的“resolved”记录。
+
+## v0.7 质量强制 Provider 行为
+
+Branch format v3 在 `<stateDir>/drafts/` 下新增持久 Draft Store。Staging 会把 prose 与 branch id、fanfic chapter、branch revision、draft revision 和 SHA-256 绑定；更新 draft 保留 id，但改变 revision/hash。用于 settlement 的 canon/style/anti-copy receipt 只能由 staged draft 产生，并会在正文、branch revision 或 durable Writing Contract 变化后失效。
+
+`auditNarrativeStyle()` 自动执行分支 Writing Contract，并运行可配置的 Prose Quality Guard。`revision-required` 信号覆盖连续超短段过多、结尾塌缩、重复句、长稿汉字 bigram diversity 塌缩与 filler cadence 重复。这些是确定性失败信号，不宣称能证明文学质量。
+
+原创 Mystery Truth 可以声明 `protectedRevealTerms` 与 `revealConditions`。完整 reveal 必须在 canon audit 中显式声明、命中已注册条件，并提供确实出现在 staged draft 中的短 evidence excerpt。与未揭示 mystery 相关的 Story Director payoff 若没有 canon-audit 授权就不能 settlement。
+
+`authorContext()` v4 返回 hard-budget telemetry。`scripts/fanfic/export_live_review.mjs` 可导出最终 branch、active-only projection、所有引用的 staged drafts、Director/Mystery/Invention 状态、剩余 receipts 与 review manifest，便于独立复核。
 
 ## Model Experience
 
@@ -45,17 +67,4 @@ Provider 还持久化 `<stateDir>/enrichment/coverage.ndjson`。Checkpoint 以�
 - **内存来源搜索** —— 应用剧透截止后扫描章节；以后可换 SQLite/FTS/vector/remote Provider，而不改 Consumer。
 - **结构化 graph 仍稀疏** —— 缺行时来源文本才是权威；确定性审计把 claim 标为未验证，而不是判假。
 - **Evidence validation 刻意保持机械** —— 它证明来源存在与 schema 完整，不证明一句暧昧文本只有一种解释。
-
-## Narrative Style Bank 与防复制
-
-可选的 `style/style-bank.json` 是绑定 source SHA 与逐章 SHA 的无正文派生索引，只保存句长、段落长度、对话比例、问号/感叹号/省略号比例以及场景模式启发式分数，不保存长篇“模仿样本”。`scripts/fanfic/build_style_bank.py` 可以从 `chapters.ndjson` 重建；文件缺失时 Provider 会在内存中生成等价数据。
-
-`narrativeStyleContext()` 会先应用 `asOfChapter` 再选择参考章节，返回作品级节奏指标、少量 cutoff 内证据窗口以及 branch 的 `authorIntent.styleNotes`。它用于控制节奏、对话/叙述平衡、段落密度和悬念强度，而不是要求精确仿写仍在世作者。
-
-`antiCopyGuard()` 会把草稿与完整不可变 canon 做规范化后的精确短语重合检查。为了抓到模型记忆中的原文，它也扫描 cutoff 后的章节，但若命中未来 canon，只报告 `beyondCutoff=true` 而不泄露章节位置。`auditNarrativeStyle()` 把宽松的指标偏移警告与该防复制结果合并；指标偏移只做修订提示，长段精确重合则要求改写。
-
-## v0.6 事务化 Provider 行为
-
-章节结算现在是事务化操作。canon/style/anti-copy 审计通过后可签发短期 receipt，receipt 绑定最终稿 hash、branch id、fanfic chapter 与 branch revision；`applyDelta()` 必须同时收到三种不同 receipt，并且只在原子写入 branch 成功后消费。这样模型无法把审计失败的稿件，或审计后又被修改的稿件直接持久化。
-
-重写必须声明 `inherit` 或 `replace`。`inherit` 会把上一 active 版本拥有的章节结构化记录克隆到新版本，除非显式提供需要删除的 record id；`replace` 从空状态开始，如会丢弃 active structured state 则必须显式确认。后续章节不能回填前面章节的 ownership 字段。重写会创建 durable Story Director reconciliation issue。Provider 还会分阶段压缩 `authorContext()` 到配置的 JSON 字符 hard ceiling，来源证据和完整管理型 branch 状态仍通过按需读取获得。
+- **Style 分类是启发式的** —— scene-mode 分数只帮助取回有用的参考窗口；它不声称章节只有一种专属体裁，也不认为聚合指标匹配就一定等于好文笔。

@@ -357,7 +357,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
       })
     },
     note:
-      'Opt-in fanfic authoring tools over `ctx.fanfic`, loaded only from the fanfic-authoring bundle patch (never a base composition). The 36 model-visible schemas are provider-neutral; a deployment supplies a canon pack and branch-state Provider (e.g. `@deepseek-ai/dsh-fanfic-local`) at execution time.',
+      'Opt-in fanfic authoring tools over `ctx.fanfic`, loaded only from the fanfic-authoring bundle patch (never a base composition). The 39 model-visible schemas are provider-neutral; a deployment supplies a canon pack and branch-state Provider (e.g. `@deepseek-ai/dsh-fanfic-local`) at execution time.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-terminal',

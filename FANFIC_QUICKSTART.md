@@ -138,36 +138,35 @@ python scripts/fanfic/build_style_bank.py canon-packs/yishizhizun
 
 Runtime retrieval still enforces `asOfChapter` before selecting style references. Anti-copy checking intentionally scans the complete corpus, including future chapters, because its job is to catch memorized wording; matches after the cutoff are reported without a source chapter number.
 
-## 9. v0.6 transactional rewrite and commit gate
+## 9. v0.7 staged draft, quality gate, and transactional settlement
 
-Run `fanfic_status` first and require tool API `0.6.0`, branch format `2`, and author-context version `3`. Prefer a unique branch name in model-authored calls.
+Run `fanfic_status` first and require tool API `0.7.0`, branch format `3`, and author-context version `4`. Prefer a unique branch name in model-authored calls.
 
-Before accepting chapter N, the exact final draft must receive three passing receipts from `fanfic_audit`, `fanfic_style_audit`, and `anti_copy_guard`. `fanfic_apply_delta` verifies that all receipts belong to the same draft hash, branch, fanfic chapter, and current branch revision, then consumes them on success. Changing the prose after audit, reusing a receipt, or trying to persist a style-failing draft is rejected.
-
-When rewriting an accepted chapter, inspect `fanfic_chapter_state` and choose one transaction:
+A branch has a durable Writing Contract; defaults are Chinese prose, 2500–4000 Han characters, and automatic scene-style mode. Before settlement:
 
 ```text
-rewriteMode=inherit
-  previous active structured state
-      ↓ clone
-  explicit dropInheritedRecordIds
-      ↓
-  new additions
-      ↓
-  replacement active version
+fanfic_draft_stage(final prose)
+  -> draftId
+fanfic_audit(draftId)
+fanfic_style_audit(draftId)
+anti_copy_guard(draftId)
+  -> three passing receipts
+fanfic_apply_delta(draftId, receipts, structured state)
 ```
 
-or:
+If prose changes, call `fanfic_draft_update(draftId, expectedDraftRevision, newText)` and re-run all three audits. Old receipts are hash-bound and cannot authorize the revised draft. `fanfic_style_audit` automatically enforces the branch Han range and Prose Quality Guard; revision-required length, degeneration, or style failures do not yield a receipt.
 
-```text
-rewriteMode=replace
-  start empty
-  ↓
-  explicit new complete state
-  ↓
-  confirmDroppedState=true if old active state would disappear
+For original mysteries, register private truth with `protectedRevealTerms` plus `revealConditions`. When a full truth is actually revealed, declare it in `fanfic_audit` with the satisfied registered condition and exact short `conditionEvidence` excerpts from the staged draft. Planned payoff settlement cannot bypass this authorization.
+
+For rewrites, inspect `fanfic_chapter_state`, choose `inherit` or `replace`, and reconcile Story Director afterward. `replace` cannot silently discard active state; later chapters cannot backfill earlier chapter ownership.
+
+Inspect actual context scaling from `author_context.telemetry`. To prepare a reviewer bundle from persistent state:
+
+```bash
+node scripts/fanfic/export_live_review.mjs \
+  --state-dir .dsh-fanfic-state \
+  --branch my-branch-name \
+  --out fanfic-live-review
 ```
 
-A later chapter cannot backfill earlier ownership fields. Rewrites create a Story Director reconciliation issue; revise affected plans/promises and close it with `story_reconciliation_resolve` before continuing. `author_context` is compacted to a configured hard JSON-character budget so long-form branch growth does not automatically become prompt growth.
-
-For a divergence that begins partway through one canon chapter, continue to prefer a structured `afterEventId`/`eventOrdinal`; `canonSameChapterTruth` contains only provenance-tagged pre-divergence structured records and never promotes the remaining raw chapter prose to binding truth.
+Optionally add pre-redacted `--sessions-dir` and `--contexts-dir`. The exporter produces an active-state-aware `REVIEW_MANIFEST.json` rather than relying on hand-counted report arithmetic.

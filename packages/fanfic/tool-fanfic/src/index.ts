@@ -22,9 +22,9 @@ import {
 export const name = 'tool-fanfic'
 export const inject = ['fanfic', 'tools', 'systemPrompt']
 
-const FANFIC_TOOL_API_VERSION = '0.6.0'
-const FANFIC_BRANCH_FORMAT_VERSION = 2
-const FANFIC_AUTHOR_CONTEXT_VERSION = 3
+const FANFIC_TOOL_API_VERSION = '0.7.0'
+const FANFIC_BRANCH_FORMAT_VERSION = 3
+const FANFIC_AUTHOR_CONTEXT_VERSION = 4
 
 /** Model-facing fanfic-tool limits. */
 export interface Config {
@@ -77,7 +77,9 @@ const FANFIC_POLICY = `Fanfic authoring policy (tool API ${FANFIC_TOOL_API_VERSI
 - Use canon_search/canon_chapter_read for evidence when structured graph data is incomplete. For systematic digestion, use canon_enrichment_plan -> canon_chapter_read -> validate/commit accepted records -> canon_enrichment_checkpoint; inspect canon_enrichment_progress instead of repeatedly digesting completed chapter/family units. Never commit unsupported interpretation as canon.
 - For long-form branches, call story_director_context before chapter planning. Maintain arcs/threads/foreshadows/horizon with the granular story_* tools; use mystery_truth_upsert for author-only answers behind original mysteries and invention_upsert for original artifacts/techniques/mechanisms. Treat Director state as mutable author metadata, never as POV knowledge.
 - Use a branch UUID or its unique branch name; prefer the stable branch name in model-authored calls to avoid UUID transcription errors.
-- Before committing an accepted chapter, run fanfic_audit, fanfic_style_audit, and anti_copy_guard on the EXACT final draft with the same branch/fanficChapter. fanfic_apply_delta requires all three passing receipt ids for that draft and branch revision; a failed or stale audit cannot be bypassed.
+- Before auditing final prose, stage it once with fanfic_draft_stage. Use the returned draftId for fanfic_audit, fanfic_style_audit, anti_copy_guard, and fanfic_apply_delta; update the same staged draft with fanfic_draft_update after revisions. Receipts are hash-bound to the staged draft, branch revision, and durable writing contract.
+- The branch writingContract is an acceptance invariant, not a prompt suggestion. fanfic_style_audit automatically enforces its Han-character range and prose-quality guard; revision-required degeneration, padding, or length failure cannot produce a commit receipt.
+- Original mystery truth is protected author metadata. Register protectedRevealTerms and revealConditions; any full reveal in prose must be declared to fanfic_audit with a registered satisfied condition plus exact short conditionEvidence that appears in the staged draft. A planned mystery payoff cannot be committed without canon-audit authorization.
 - For rewrites, choose rewriteMode explicitly: inherit carries the previous active structured chapter state (optionally dropping named record ids), while replace discards it and requires explicit confirmation when state would be lost. Never backfill chapter N state from chapter N+1; rewrite the owning chapter.
 - After fanfic_apply_delta, inspect story_director_context. Rewrites create a Director reconciliation issue; update affected horizon/thread/foreshadow/arc metadata with granular tools, then resolve the reconciliation issue before planning further chapters. Style warnings are advisory unless marked revision-required; exact source overlap must be rewritten.`
 
@@ -102,12 +104,7 @@ export function apply(ctx: Context, config: Config): void {
     description: 'Inspect the active canon pack, structured graph counts, and branch-state directory.',
     parameters: {},
     output: jsonObjectOutput('Loaded fanfic provider status.'),
-    execute: async (_args, exec) => toolObject({
-      ...(await ctx.fanfic.status(exec.signal)),
-      toolApiVersion: FANFIC_TOOL_API_VERSION,
-      branchFormatVersion: FANFIC_BRANCH_FORMAT_VERSION,
-      authorContextVersion: FANFIC_AUTHOR_CONTEXT_VERSION,
-    }),
+    execute: async (_args, exec) => toolObject({ ...(await ctx.fanfic.status(exec.signal)), toolApiVersion: FANFIC_TOOL_API_VERSION, branchFormatVersion: FANFIC_BRANCH_FORMAT_VERSION, authorContextVersion: FANFIC_AUTHOR_CONTEXT_VERSION }),
     presentCall: () => ({ card: 'generic', title: 'Inspect fanfic status', kind: 'read' }),
   }))
 
@@ -291,16 +288,20 @@ export function apply(ctx: Context, config: Config): void {
 
   ctx.tools.register(defineTool({
     name: 'anti_copy_guard',
-    description: 'Detect exact normalized phrase overlap between a draft and the entire immutable canon corpus. Future-source match locations remain hidden behind the spoiler cutoff.',
+    description: 'Detect exact normalized phrase overlap against the immutable canon corpus. Prefer draftId from fanfic_draft_stage; only staged drafts can receive commit receipts. Future-source locations remain hidden behind the spoiler cutoff.',
     parameters: {
-      draft: { type: 'string', required: true }, asOfChapter: { type: 'integer', required: true },
-      branchId: { type: 'string', description: 'Optional branch UUID or unique branch name; required with fanficChapter to issue an anti-copy commit receipt.' }, fanficChapter: { type: 'integer' },
+      draftId: { type: 'string', description: 'Preferred staged draft id. The provider infers branch/chapter/revision from it.' },
+      draft: { type: 'string', description: 'Optional ad-hoc text for non-commit checks. Cannot produce a commit receipt.' },
+      asOfChapter: { type: 'integer', required: true },
+      branchId: { type: 'string', description: 'Optional branch UUID or unique branch name for ad-hoc checks.' }, fanficChapter: { type: 'integer' },
       minPhraseChars: { type: 'integer' }, maxFindings: { type: 'integer' },
     },
     output: jsonObjectOutput('Exact source-overlap findings.'),
     async execute(args, exec) {
+      if (args.draftId === undefined && args.draft === undefined) throw new Error('anti_copy_guard requires draftId or draft')
       return toolObject(await ctx.fanfic.antiCopyGuard({
-        draft: args.draft,
+        ...(args.draftId === undefined ? {} : { draftId: nonEmpty(args.draftId, 'draftId') }),
+        ...(args.draft === undefined ? {} : { draft: args.draft }),
         asOfChapter: positiveInteger(args.asOfChapter, 'asOfChapter'),
         ...(args.branchId === undefined ? {} : { branchId: await resolveBranchRef(ctx, args.branchId, exec.signal) }),
         ...(args.fanficChapter === undefined ? {} : { fanficChapter: positiveInteger(args.fanficChapter, 'fanficChapter') }),
@@ -308,25 +309,29 @@ export function apply(ctx: Context, config: Config): void {
         maxFindings: positiveInteger(args.maxFindings ?? defaultAntiCopyMaxFindings, 'maxFindings'),
       }, exec.signal))
     },
-    presentCall: args => ({ card: 'generic', title: 'Check source overlap', kind: 'read', rawInput: { cutoff: args.asOfChapter } }),
+    presentCall: args => ({ card: 'generic', title: 'Check source overlap', kind: 'read', rawInput: { cutoff: args.asOfChapter, draftId: args.draftId } }),
   }))
 
   ctx.tools.register(defineTool({
     name: 'fanfic_style_audit',
-    description: 'Audit a draft against high-level work-style metrics for the selected scene mode and run the corpus-wide anti-copy guard. Style drift is advisory; exact source overlap should be rewritten.',
+    description: 'Audit narrative-style drift, durable Han-length contract, prose degeneration, and exact-copy risk. Prefer staged draftId. Revision-required findings block a style receipt.',
     parameters: {
-      draft: { type: 'string', required: true }, asOfChapter: { type: 'integer', required: true },
+      draftId: { type: 'string', description: 'Preferred staged draft id; its branch Writing Contract is enforced automatically.' },
+      draft: { type: 'string', description: 'Optional ad-hoc prose for non-commit inspection.' },
+      asOfChapter: { type: 'integer', required: true },
       mode: { type: 'string', enum: ['auto', 'jianghu', 'mystery', 'reincarnation-mission', 'banter-introspection', 'combat', 'high-level-strategy', 'cosmology-philosophy', 'exposition', 'ensemble-rumor', 'emotional'] },
       query: { type: 'string' }, povCharacter: { type: 'string' }, participants: { type: 'array', items: { type: 'string' } },
       branchId: { type: 'string' }, fanficChapter: { type: 'integer' }, sampleLimit: { type: 'integer' },
       antiCopyMinPhraseChars: { type: 'integer' }, antiCopyMaxFindings: { type: 'integer' },
-      targetMinHanChars: { type: 'integer', description: 'Optional minimum Han-character count for the accepted chapter.' },
-      targetMaxHanChars: { type: 'integer', description: 'Optional maximum Han-character count for the accepted chapter.' },
+      targetMinHanChars: { type: 'integer', description: 'Ad-hoc only. Staged branch drafts always use the durable Writing Contract.' },
+      targetMaxHanChars: { type: 'integer', description: 'Ad-hoc only. Staged branch drafts always use the durable Writing Contract.' },
     },
-    output: jsonObjectOutput('Narrative style drift and anti-copy audit.'),
+    output: jsonObjectOutput('Narrative style, length, prose-quality, and anti-copy audit.'),
     async execute(args, exec) {
+      if (args.draftId === undefined && args.draft === undefined) throw new Error('fanfic_style_audit requires draftId or draft')
       return toolObject(await ctx.fanfic.auditNarrativeStyle({
-        draft: args.draft,
+        ...(args.draftId === undefined ? {} : { draftId: nonEmpty(args.draftId, 'draftId') }),
+        ...(args.draft === undefined ? {} : { draft: args.draft }),
         asOfChapter: positiveInteger(args.asOfChapter, 'asOfChapter'),
         mode: (args.mode ?? 'auto') as NarrativeStyleMode,
         query: args.query?.trim() ?? '',
@@ -341,7 +346,7 @@ export function apply(ctx: Context, config: Config): void {
         ...(args.targetMaxHanChars === undefined ? {} : { targetMaxHanChars: positiveInteger(args.targetMaxHanChars, 'targetMaxHanChars') }),
       }, exec.signal))
     },
-    presentCall: args => ({ card: 'generic', title: `Audit narrative style @ ${args.asOfChapter}`, kind: 'read', rawInput: { mode: args.mode ?? 'auto' } }),
+    presentCall: args => ({ card: 'generic', title: `Audit narrative style @ ${args.asOfChapter}`, kind: 'read', rawInput: { mode: args.mode ?? 'auto', draftId: args.draftId } }),
   }))
 
   ctx.tools.register(defineTool({
@@ -513,9 +518,7 @@ export function apply(ctx: Context, config: Config): void {
     description: 'List existing local fanfic branches and their latest revisions.',
     parameters: {},
     output: { schema: { type: 'array', items: { type: 'object', additionalProperties: true } }, render: (_args, value) => jsonText(value) },
-    execute: async (_args, exec) => toolObjectArray(
-      (await ctx.fanfic.listBranches(exec.signal)).map(branch => compactBranchSummary(branch)),
-    ),
+    execute: async (_args, exec) => toolObjectArray((await ctx.fanfic.listBranches(exec.signal)).map(branch => compactBranchSummary(branch))),
     presentCall: () => ({ card: 'generic', title: 'List fanfic branches', kind: 'read' }),
   }))
 
@@ -528,12 +531,22 @@ export function apply(ctx: Context, config: Config): void {
       notes: { type: 'string' },
       premise: { type: 'string' },
       divergenceMode: { type: 'string', enum: ['canon-compliant', 'soft-divergence', 'hard-au'] },
+      minHanChars: { type: 'integer', description: 'Durable minimum accepted Han-character count; defaults to 2500.' },
+      maxHanChars: { type: 'integer', description: 'Durable maximum accepted Han-character count; defaults to 4000.' },
+      defaultStyleMode: { type: 'string', enum: ['auto', 'jianghu', 'mystery', 'reincarnation-mission', 'banter-introspection', 'combat', 'high-level-strategy', 'cosmology-philosophy', 'exposition', 'ensemble-rumor', 'emotional'] },
     },
     output: jsonObjectOutput('Created branch snapshot.'),
     async execute(args, exec) {
-      const authorIntent = args.premise === undefined && args.divergenceMode === undefined ? undefined : {
+      const hasContract = args.minHanChars !== undefined || args.maxHanChars !== undefined || args.defaultStyleMode !== undefined
+      const authorIntent = args.premise === undefined && args.divergenceMode === undefined && !hasContract ? undefined : {
         ...(args.premise === undefined ? {} : { premise: args.premise.trim() }),
         ...(args.divergenceMode === undefined ? {} : { divergenceMode: args.divergenceMode as FanficAuthorIntent['divergenceMode'] }),
+        ...(hasContract ? { writingContract: {
+          language: 'zh-CN' as const,
+          minHanChars: positiveInteger(args.minHanChars ?? 2500, 'minHanChars'),
+          maxHanChars: positiveInteger(args.maxHanChars ?? 4000, 'maxHanChars'),
+          defaultStyleMode: (args.defaultStyleMode ?? 'auto') as NarrativeStyleMode,
+        } } : {}),
       }
       const branch = await ctx.fanfic.createBranch({
         name: nonEmpty(args.name, 'name'),
@@ -551,10 +564,7 @@ export function apply(ctx: Context, config: Config): void {
     description: 'Read the full administrative branch snapshot, including later fanfic state. Do not use this as scene context; use author_context with fanficChapter to avoid fanfic-future leakage.',
     parameters: { branchId: { type: 'string', required: true, description: 'Branch UUID or unique branch name.' } },
     output: jsonObjectOutput('Fanfic branch snapshot.'),
-    async execute(args, exec) {
-      const branchId = await resolveBranchRef(ctx, args.branchId, exec.signal)
-      return toolObject(await ctx.fanfic.getBranch(branchId, exec.signal))
-    },
+    execute: async (args, exec) => toolObject(await ctx.fanfic.getBranch(await resolveBranchRef(ctx, args.branchId, exec.signal), exec.signal)),
     presentCall: args => ({ card: 'generic', title: 'Read fanfic branch', kind: 'read', rawInput: args.branchId }),
   }))
 
@@ -581,6 +591,54 @@ export function apply(ctx: Context, config: Config): void {
   }))
 
   ctx.tools.register(defineTool({
+    name: 'fanfic_draft_stage',
+    description: 'Stage one complete chapter draft once. All v0.7 audits and the final commit should reference the returned draftId instead of copying prose between tool calls.',
+    parameters: {
+      branchId: { type: 'string', required: true, description: 'Branch UUID or unique branch name.' },
+      fanficChapter: { type: 'integer', required: true },
+      text: { type: 'string', required: true },
+    },
+    output: jsonObjectOutput('Staged draft metadata.'),
+    async execute(args, exec) {
+      const draft = await ctx.fanfic.stageDraft({
+        branchId: await resolveBranchRef(ctx, args.branchId, exec.signal),
+        fanficChapter: positiveInteger(args.fanficChapter, 'fanficChapter'),
+        text: nonEmpty(args.text, 'text'),
+      }, exec.signal)
+      return toolObject(compactDraft(draft))
+    },
+    presentCall: args => ({ card: 'generic', title: `Stage fanfic draft ${args.fanficChapter}`, kind: 'edit', rawInput: { branchId: args.branchId } }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'fanfic_draft_update',
+    description: 'Replace prose in one staged draft. Updating changes draftHash/draftRevision and invalidates receipts issued for the older text.',
+    parameters: {
+      draftId: { type: 'string', required: true },
+      expectedDraftRevision: { type: 'integer', required: true },
+      text: { type: 'string', required: true },
+    },
+    output: jsonObjectOutput('Updated staged draft metadata.'),
+    async execute(args, exec) {
+      return toolObject(compactDraft(await ctx.fanfic.updateDraft({
+        draftId: nonEmpty(args.draftId, 'draftId'),
+        expectedDraftRevision: positiveInteger(args.expectedDraftRevision, 'expectedDraftRevision'),
+        text: nonEmpty(args.text, 'text'),
+      }, exec.signal)))
+    },
+    presentCall: args => ({ card: 'generic', title: 'Update staged fanfic draft', kind: 'edit', rawInput: { draftId: args.draftId } }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'fanfic_draft_get',
+    description: 'Read one staged draft and its exact hash/revision. Use only when the staged prose itself needs inspection.',
+    parameters: { draftId: { type: 'string', required: true } },
+    output: jsonObjectOutput('Staged draft including prose text.'),
+    execute: async (args, exec) => toolObject(await ctx.fanfic.getDraft(nonEmpty(args.draftId, 'draftId'), exec.signal)),
+    presentCall: args => ({ card: 'generic', title: 'Read staged fanfic draft', kind: 'read', rawInput: args.draftId }),
+  }))
+
+  ctx.tools.register(defineTool({
     name: 'fanfic_intent_update',
     description: 'Replace the branch author intent with compare-and-set revision. This is project policy for premise, divergence mode, themes, tone, POV, character priorities, forbidden outcomes, and style notes.',
     parameters: {
@@ -594,6 +652,9 @@ export function apply(ctx: Context, config: Config): void {
       characterPriorities: { type: 'array', items: { type: 'string' } },
       forbiddenOutcomes: { type: 'array', items: { type: 'string' } },
       styleNotes: { type: 'array', items: { type: 'string' } },
+      minHanChars: { type: 'integer', required: true },
+      maxHanChars: { type: 'integer', required: true },
+      defaultStyleMode: { type: 'string', required: true, enum: ['auto', 'jianghu', 'mystery', 'reincarnation-mission', 'banter-introspection', 'combat', 'high-level-strategy', 'cosmology-philosophy', 'exposition', 'ensemble-rumor', 'emotional'] },
     },
     output: jsonObjectOutput('Updated branch author intent.'),
     async execute(args, exec) {
@@ -606,7 +667,14 @@ export function apply(ctx: Context, config: Config): void {
         characterPriorities: uniqueStrings(args.characterPriorities ?? []),
         forbiddenOutcomes: uniqueStrings(args.forbiddenOutcomes ?? []),
         styleNotes: uniqueStrings(args.styleNotes ?? []),
+        writingContract: {
+          language: 'zh-CN',
+          minHanChars: positiveInteger(args.minHanChars, 'minHanChars'),
+          maxHanChars: positiveInteger(args.maxHanChars, 'maxHanChars'),
+          defaultStyleMode: args.defaultStyleMode as NarrativeStyleMode,
+        },
       }
+      if (authorIntent.writingContract.maxHanChars < authorIntent.writingContract.minHanChars) throw new Error('maxHanChars must be >= minHanChars')
       const branch = await ctx.fanfic.updateIntent({
         branchId: await resolveBranchRef(ctx, args.branchId, exec.signal),
         expectedRevision: positiveInteger(args.expectedRevision, 'expectedRevision'),
@@ -727,7 +795,7 @@ export function apply(ctx: Context, config: Config): void {
       branchId: { type: 'string', required: true, description: 'Branch UUID or unique branch name.' },
       expectedRevision: { type: 'integer', required: true },
       fanficChapter: { type: 'integer', required: true },
-      draft: { type: 'string', required: true, description: 'Exact accepted prose that produced the audit receipts.' },
+      draftId: { type: 'string', required: true, description: 'Staged draft id that produced the three audit receipts.' },
       auditReceiptIds: { type: 'array', required: true, items: { type: 'string' }, description: 'Exactly three receipts from fanfic_audit, fanfic_style_audit, and anti_copy_guard for this draft/revision.' },
       rewriteMode: { type: 'string', enum: ['inherit', 'replace'], description: 'Required only when rewriting an existing chapter. inherit carries prior structured state; replace discards it.' },
       dropInheritedRecordIds: { type: 'array', items: { type: 'string' }, description: 'When rewriteMode=inherit, old chapter record ids to omit from the inherited state.' },
@@ -784,7 +852,7 @@ export function apply(ctx: Context, config: Config): void {
       }
       const branch = await ctx.fanfic.applyDelta({
         branchId: await resolveBranchRef(ctx, args.branchId, exec.signal), expectedRevision: positiveInteger(args.expectedRevision, 'expectedRevision'), delta,
-        draft: nonEmpty(args.draft, 'draft'), auditReceiptIds: uniqueStrings(args.auditReceiptIds),
+        draftId: nonEmpty(args.draftId, 'draftId'), auditReceiptIds: uniqueStrings(args.auditReceiptIds),
         ...(args.rewriteMode === undefined ? {} : { rewriteMode: args.rewriteMode as 'inherit' | 'replace' }),
         ...(args.dropInheritedRecordIds === undefined ? {} : { dropInheritedRecordIds: uniqueStrings(args.dropInheritedRecordIds) }),
         ...(args.confirmDroppedState === undefined ? {} : { confirmDroppedState: args.confirmDroppedState }),
@@ -798,7 +866,8 @@ export function apply(ctx: Context, config: Config): void {
     name: 'fanfic_audit',
     description: 'Run deterministic spoiler/reveal checks and validate structured knowledge, identity, canon-fact, and power claims against the current canon snapshot. Missing graph data yields warnings, not invented facts.',
     parameters: {
-      draft: { type: 'string', required: true },
+      draftId: { type: 'string', description: 'Preferred staged draft id; required for a commit receipt.' },
+      draft: { type: 'string', description: 'Optional ad-hoc prose for non-commit inspection.' },
       asOfChapter: { type: 'integer', required: true },
       povCharacter: { type: 'string', required: true },
       branchId: { type: 'string' },
@@ -812,6 +881,16 @@ export function apply(ctx: Context, config: Config): void {
           },
         },
       },
+      mysteryReveals: {
+        type: 'array', description: 'Explicit original-mystery reveals present in this draft. Full truth requires at least one satisfied registered reveal condition.', items: {
+          type: 'object', additionalProperties: false, properties: {
+            mysteryId: { type: 'string', required: true },
+            level: { type: 'string', required: true, enum: ['partial', 'truth'] },
+            satisfiedConditions: { type: 'array', items: { type: 'string' } },
+            conditionEvidence: { type: 'array', items: { type: 'string' }, description: 'Exact short excerpts from the staged draft that demonstrate the declared reveal condition.' },
+          },
+        },
+      },
     },
     output: jsonObjectOutput('Deterministic fanfic audit result.'),
     async execute(args, exec) {
@@ -821,20 +900,41 @@ export function apply(ctx: Context, config: Config): void {
         ...(claim.object === undefined ? {} : { object: nonEmpty(claim.object, 'claim.object') }),
       }))
       if (claims.length > maxAuditClaims) throw new Error(`fanfic_audit accepts at most ${maxAuditClaims} claims`)
+      if (args.draftId === undefined && args.draft === undefined) throw new Error('fanfic_audit requires draftId or draft')
       return toolObject(await ctx.fanfic.audit({
-        draft: args.draft,
+        ...(args.draftId === undefined ? {} : { draftId: nonEmpty(args.draftId, 'draftId') }),
+        ...(args.draft === undefined ? {} : { draft: args.draft }),
         asOfChapter: positiveInteger(args.asOfChapter, 'asOfChapter'),
         povCharacter: nonEmpty(args.povCharacter, 'povCharacter'),
         ...(args.branchId === undefined ? {} : { branchId: await resolveBranchRef(ctx, args.branchId, exec.signal) }),
         ...(args.fanficChapter === undefined ? {} : { fanficChapter: positiveInteger(args.fanficChapter, 'fanficChapter') }),
         participants: uniqueStrings(args.participants ?? []),
         claims,
+        mysteryReveals: (args.mysteryReveals ?? []).map(item => ({
+          mysteryId: nonEmpty(item.mysteryId, 'mysteryReveal.mysteryId'),
+          level: item.level as 'partial' | 'truth',
+          satisfiedConditions: uniqueStrings(item.satisfiedConditions ?? []),
+          conditionEvidence: uniqueStrings(item.conditionEvidence ?? []),
+        })),
       }, exec.signal))
     },
     presentCall: args => ({ card: 'generic', title: `Audit fanfic @ canon ${args.asOfChapter}`, kind: 'read', rawInput: { pov: args.povCharacter, claims: args.claims?.length ?? 0 } }),
   }))
 }
 
+
+function compactDraft(draft: { readonly id: string; readonly branchId: string; readonly fanficChapter: number; readonly branchRevision: number; readonly draftRevision: number; readonly draftHash: string; readonly text: string; readonly updatedAt: string }) {
+  return {
+    draftId: draft.id,
+    branchId: draft.branchId,
+    fanficChapter: draft.fanficChapter,
+    branchRevision: draft.branchRevision,
+    draftRevision: draft.draftRevision,
+    draftHash: draft.draftHash,
+    chars: draft.text.length,
+    updatedAt: draft.updatedAt,
+  }
+}
 
 function compactBranchSummary(branch: FanficBranch) {
   const activeVersions = branch.chapterVersions.filter(item => item.status === 'active')
@@ -855,21 +955,11 @@ function compactChapterCommit(branch: FanficBranch, delta: FanficStateDelta) {
   return {
     branchId: branch.id, revision: branch.revision, fanficChapter: delta.fanficChapter, chapterVersionId: versionId, rewriteMode: version?.rewriteMode ?? 'initial',
     activeState: {
-      facts: branch.facts.filter(item => item.originChapterVersionId === versionId).length,
-      knowledge: branch.knowledge.filter(item => item.originChapterVersionId === versionId).length,
-      characterStates: branch.characterStates.filter(item => item.originChapterVersionId === versionId).length,
-      relationships: branch.relationships.filter(item => item.originChapterVersionId === versionId).length,
+      facts: branch.facts.filter(item => item.originChapterVersionId === versionId).length, knowledge: branch.knowledge.filter(item => item.originChapterVersionId === versionId).length,
+      characterStates: branch.characterStates.filter(item => item.originChapterVersionId === versionId).length, relationships: branch.relationships.filter(item => item.originChapterVersionId === versionId).length,
       causalThreads: branch.causalThreads.filter(item => item.originChapterVersionId === versionId).length,
     },
-    applied: {
-      facts: delta.facts?.length ?? 0,
-      knowledge: delta.knowledge?.length ?? 0,
-      characterStates: delta.characterStates?.length ?? 0,
-      relationships: delta.relationships?.length ?? 0,
-      causalThreads: delta.causalThreads?.length ?? 0,
-      resolvedCausalThreads: delta.resolveCausalThreadIds?.length ?? 0,
-      chapterSummary: delta.chapterSummary !== undefined,
-    },
+    applied: { facts: delta.facts?.length ?? 0, knowledge: delta.knowledge?.length ?? 0, characterStates: delta.characterStates?.length ?? 0, relationships: delta.relationships?.length ?? 0, causalThreads: delta.causalThreads?.length ?? 0, resolvedCausalThreads: delta.resolveCausalThreadIds?.length ?? 0, chapterSummary: delta.chapterSummary !== undefined },
     openDirectorReconciliations: branch.storyDirector.reconciliation.filter(item => item.status === 'open').length,
   }
 }
@@ -888,7 +978,7 @@ function chapterPlanSchema() { return { type: 'object' as const, additionalPrope
   fanficChapter: { type: 'integer' as const, required: true as const }, status: { type: 'string' as const, required: true as const, enum: ['planned', 'drafted', 'accepted'] }, goal: { type: 'string' as const, required: true as const }, pov: { type: 'string' as const, required: true as const }, beats: { type: 'array' as const, items: { type: 'string' as const } }, advanceThreads: { type: 'array' as const, items: { type: 'string' as const } }, plantForeshadows: { type: 'array' as const, items: { type: 'string' as const } }, payoffForeshadows: { type: 'array' as const, items: { type: 'string' as const } }, constraints: { type: 'array' as const, items: { type: 'string' as const } },
 } } }
 function mysteryTruthSchema() { return { type: 'object' as const, required: true as const, additionalProperties: false as const, properties: {
-  id: { type: 'string' as const, required: true as const }, status: { type: 'string' as const, required: true as const, enum: ['planned', 'active', 'revealed', 'retired'] }, label: { type: 'string' as const, required: true as const }, secretTruth: { type: 'string' as const, required: true as const }, mechanism: { type: 'string' as const, required: true as const }, allowedClues: { type: 'array' as const, items: { type: 'string' as const } }, falseLeads: { type: 'array' as const, items: { type: 'string' as const } }, revealConditions: { type: 'array' as const, items: { type: 'string' as const } }, plannedPayoff: { type: 'string' as const, required: true as const }, relatedThreads: { type: 'array' as const, items: { type: 'string' as const } },
+  id: { type: 'string' as const, required: true as const }, status: { type: 'string' as const, required: true as const, enum: ['planned', 'active', 'revealed', 'retired'] }, label: { type: 'string' as const, required: true as const }, secretTruth: { type: 'string' as const, required: true as const }, mechanism: { type: 'string' as const, required: true as const }, allowedClues: { type: 'array' as const, items: { type: 'string' as const } }, falseLeads: { type: 'array' as const, items: { type: 'string' as const } }, revealConditions: { type: 'array' as const, items: { type: 'string' as const } }, protectedRevealTerms: { type: 'array' as const, required: true as const, items: { type: 'string' as const } }, plannedPayoff: { type: 'string' as const, required: true as const }, relatedThreads: { type: 'array' as const, items: { type: 'string' as const } },
 } } }
 function inventionSchema() { return { type: 'object' as const, required: true as const, additionalProperties: false as const, properties: {
   id: { type: 'string' as const, required: true as const }, kind: { type: 'string' as const, required: true as const, enum: ['artifact', 'technique', 'organization', 'mechanism', 'character', 'location', 'other'] }, name: { type: 'string' as const, required: true as const }, originFanficChapter: { type: 'integer' as const, required: true as const }, summary: { type: 'string' as const, required: true as const }, capabilities: { type: 'array' as const, items: { type: 'string' as const } }, constraints: { type: 'array' as const, items: { type: 'string' as const } }, costs: { type: 'array' as const, items: { type: 'string' as const } }, powerSource: { type: 'string' as const, required: true as const }, owner: { type: 'string' as const }, canonCompatibility: { type: 'array' as const, items: { type: 'string' as const } }, relatedThreads: { type: 'array' as const, items: { type: 'string' as const } },
@@ -938,8 +1028,7 @@ async function resolveBranchRef(ctx: Context, value: string, signal?: AbortSigna
   const ref = nonEmpty(value, 'branchId')
   if (/^fanfic-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(ref)) return FanficBranchId(ref)
   const matches = (await ctx.fanfic.listBranches(signal)).filter(branch => branch.name === ref)
-  const match = matches[0]
-  if (match === undefined) throw new Error(`fanfic branch name does not exist: ${JSON.stringify(ref)}`)
+  if (matches.length === 0) throw new Error(`fanfic branch name does not exist: ${JSON.stringify(ref)}`)
   if (matches.length > 1) throw new Error(`fanfic branch name is ambiguous: ${JSON.stringify(ref)}`)
-  return match.id
+  return matches[0]!.id
 }

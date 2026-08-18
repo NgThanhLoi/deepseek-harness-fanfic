@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/subsystems/fanfic.md
-fanfic.md: dd98230817fe1c9bde31a3d485eabec23b713cb0
-fanfic.zh.md: bef20f48fa8d6c680d3f649c2e98492efb5930e1
+fanfic.md: a3161ed7fb1596e1d0ccc6db6d92dabfce266c50
+fanfic.zh.md: 84d2275009428bb44ba96a91f0e6b7835a66cd9f

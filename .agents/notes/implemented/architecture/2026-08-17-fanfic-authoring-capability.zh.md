@@ -122,3 +122,17 @@ Long-form correctness 版本之后的一次三章真实模型运行暴露了另�
 Author packet 升级为 version 3，并受配置的序列化 hard size ceiling 约束。压缩先移除可选 source/style evidence，再限制 structured snapshot families、人物 dossier、branch working rows 与 Director rows。如果 Provider 无法在配置上限内生成可用 packet，它会直接失败，而不会静默突破 deployment policy。完整 evidence 与管理型 branch history 仍可通过显式读取获得。
 
 真实运行中的 false positive 也促使 independent audit extraction 收紧：普通兵器探查不属于超自然 power claim，诸如 `身份牌` 的词汇出现也不属于 identity assertion；更强的 capability/identity 线索仍会进入 uncovered-risky-claim audit。核心 style drift 可升级为 `revision-required`，这种结果不能签发章节结算所需的 style receipt。Tool API `0.6.0` 与 runtime bundle preflight 让这些行为在挂载模型之前即可验证。
+
+## 质量强制与可复核性修订
+
+事务化版本后的十章真实模型 endurance run 表明，主要失败模式已经不再是 state correctness。Caller 可以漏传可选 Han 长度目标，从而提交明显短于 2500–4000 汉字的章节；其中一章甚至通过重复超短 filler 勉强填到数值下限；一个原创 mystery payoff 在注册 reveal condition 尚未发生时就暴露了 private answer；review bundle 也缺少足够 raw state/context，无法独立验证报告中的若干结论。与此同时，每个 audit 都重新复制整章正文，使 exact-draft transaction safety 产生不必要的 token 成本和文本漂移风险。
+
+因此 branch format v3 把 `FanficWritingContract` 变为持久 author intent，并让已接受 chapter version 绑定持久 staged draft id/hash。`stageDraft()` 在当前 branch revision 创建唯一 prose identity；`updateDraft()` 保留 id，但推进 draft revision/hash。Canon/style/copy audit 仍可检查 ad-hoc text，但只有 staged draft 可以获得 commit receipt。Receipt 校验还绑定当前 Writing Contract，所以逐调用参数不能弱化分支的 Han 长度约束。
+
+Narrative-style audit 现在包含 Provider 可配置的确定性 Prose Quality Guard。连续超短段过多、结尾塌缩成超短碎片、规范化重复句、长稿 Han-bigram diversity 过低以及 filler cadence 重复都可以触发 revision-required。这些信号只针对机械 generation degeneration，不宣称是文学评分。随 deployment 变化的阈值全部放在 Provider Config 中，bundle 提供默认值。
+
+Mystery Truth Ledger 也从单纯 author memory 升级为 enforcement input。Truth 可以声明 protected reveal terms 和自然语言 reveal conditions。当 final prose 进行完整揭示时，canon audit declaration 必须指出已注册且满足的条件，并提供确实存在于 staged draft 中的短 evidence excerpt。Canon audit receipt 会携带获授权的 mystery id；若相关 planned payoff 未获授权，settlement 会拒绝。它仍不能自动证明任意自然语言语义条件，但可以阻止未声明 payoff 与伪造 evidence 绕过 ledger。
+
+`AuthorContext` version 4 增加确定性 serialization telemetry：实际 JSON chars、配置 hard budget、compaction level，以及被省略的 source/character/branch/Director 类别。可复核性也成为显式能力：`scripts/fanfic/export_live_review.mjs` 会导出选定 v3 branch、active-only projection、chapter-version history、所有引用的 staged drafts、Story Director、Mystery Truth Ledger、Invention Registry、剩余未消费 receipts 与 machine-readable manifest。只有 caller 显式提供时才复制 session/context 目录；exporter 不收集环境变量或 credential。
+
+面向模型的 tool API 为 `0.7.0`，目前共 39 个 tools；新增 staged-draft 操作，同时保持 Service Definition / Provider / Consumer 分层。由于项目仍处于 pre-release，v0.7 会主动拒绝旧 on-disk branch format，而不是维护尚未形成兼容承诺的 migration code。

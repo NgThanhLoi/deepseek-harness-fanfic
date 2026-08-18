@@ -1,11 +1,11 @@
 {
-  "version": "0.6",
-  "milestone": "Transactional Author Workflow",
+  "version": "0.7",
+  "milestone": "Quality Enforcement & Reviewability",
   "baseCommit": "47f943859bef60e4160492346772ded9b24f765a",
-  "toolApiVersion": "0.6.0",
-  "branchFormatVersion": 2,
-  "authorContextVersion": 3,
-  "modelFacingToolCount": 36,
+  "toolApiVersion": "0.7.0",
+  "branchFormatVersion": 3,
+  "authorContextVersion": 4,
+  "modelFacingToolCount": 39,
   "providerSmoke": {
     "ok": true,
     "status": {
@@ -53,8 +53,7 @@
           "ensemble-rumor",
           "emotional"
         ]
-      },
-      "stateDir": "/mnt/data/dsh-fanfic-v06-work/deepseek-harness-fanfic-v0.5/.dsh-fanfic-state-smoke"
+      }
     },
     "cutoff": {
       "beforeRevealMaxSourceChapter": 654,
@@ -130,38 +129,67 @@
   },
   "longformRegression": {
     "ok": true,
-    "receipts": "transactional",
-    "rewrite": {
-      "mode": "inherit",
-      "inheritedCharacterState": 1,
-      "replaceDropped": true
+    "version": "0.7",
+    "writingContract": {
+      "shortDraftRejected": true,
+      "enforcedMinHanChars": 2500
     },
-    "backfillBlocked": true,
-    "reconciliationResolved": true,
-    "contextChars": 17324,
-    "auditPrecision": {
-      "risky": [
-        {
-          "kind": "power",
-          "subject": "顾小桑",
-          "object": "顾小桑抬手催动白雾封住井口。"
-        }
-      ],
-      "ordinary": []
+    "draftStore": {
+      "staleReceiptBlocked": true,
+      "acceptedDraftId": "draft-1a8597f4-54dd-4a99-8cd8-0abc6d432448"
     },
-    "style": {
-      "ok": false,
-      "required": [
-        "dialogueCharRatio",
-        "shortParagraphRatio"
+    "proseQuality": {
+      "rejected": true,
+      "findings": [
+        "PROSE_DEGENERATION_SHORT_PARAGRAPH_RUN",
+        "PROSE_DEGENERATION_TAIL_COLLAPSE",
+        "PROSE_DEGENERATION_REPEATED_SENTENCES",
+        "PROSE_DEGENERATION_LEXICAL_COLLAPSE",
+        "PROSE_DEGENERATION_PADDING_CADENCE"
       ]
+    },
+    "rewrite": {
+      "inherit": true,
+      "replaceDropBlocked": true,
+      "backfillBlocked": true
+    },
+    "mysteryReveal": {
+      "undeclaredBlocked": true,
+      "unmetConditionBlocked": true,
+      "fakeEvidenceBlocked": true,
+      "authorizedPayoff": true
+    },
+    "authorContext": {
+      "version": 4,
+      "chars": 17860,
+      "telemetry": {
+        "serializedChars": 17860,
+        "budgetChars": 20000,
+        "compactionLevel": 3,
+        "omitted": {
+          "sourceExcerpts": 7,
+          "characterEvidence": 8,
+          "olderBranchRecords": 0,
+          "storyDirectorRecords": 0
+        }
+      }
+    },
+    "auditPrecision": {
+      "riskyCount": 1,
+      "ordinaryCount": 0
     }
+  },
+  "reviewExportSmoke": {
+    "ok": true,
+    "activeChapterVersions": 1,
+    "activeFacts": 1,
+    "draftHanChars": 17
   },
   "checks": {
     "focusedTypeScriptBuild": {
       "status": "pass",
       "typescript": "5.8.3",
-      "note": "Temporary local Node/typescript/workspace type stubs were used because the supplied checkout has no pnpm install; removed before distribution."
+      "note": "Temporary local type/workspace stubs used because the supplied checkout has no dependency install; removed before distribution."
     },
     "providerSmoke1409": {
       "status": "pass",
@@ -170,17 +198,30 @@
     "longformRegressionSmoke": {
       "status": "pass",
       "covers": [
-        "exact-draft three-receipt commit gate",
-        "receipt draft/revision binding and one-time consumption",
-        "rewrite inherit preserves structured state",
-        "rewrite replace requires dropped-state confirmation",
-        "backfill ownership rejection",
-        "Story Director reconciliation",
+        "durable branch Writing Contract",
+        "staged Draft Store and stale receipt invalidation",
+        "prose degeneration guard",
+        "rewrite inherit",
+        "rewrite replace silent-drop rejection",
+        "backfill rejection",
+        "Mystery Reveal Guard declaration/condition/evidence authorization",
         "same-chapter divergence",
-        "audit precision for ordinary weapon actions",
-        "revision-required style drift",
-        "hard author-context budget"
+        "audit precision",
+        "hard Author Context v4 telemetry"
       ]
+    },
+    "reviewExportSmoke": {
+      "status": "pass",
+      "covers": [
+        "active-only projection",
+        "referenced staged draft export",
+        "machine-readable manifest"
+      ]
+    },
+    "manualCordisParity": {
+      "status": "pass",
+      "providerConfigKeys": 26,
+      "toolConfigKeys": 11
     },
     "workspaceConstraints": {
       "status": "pass"
@@ -211,13 +252,18 @@
       "status": "blocked",
       "reason": "Supplied checkout has no workspace install; mdast-util-from-markdown is unavailable."
     },
+    "repositoryCordisGate": {
+      "status": "blocked",
+      "reason": "Supplied checkout has no workspace install; js-yaml is unavailable to the Node verifier. Fanfic bundle/config parity passed independently with PyYAML."
+    },
     "runtimeBundlePreflight": {
-      "status": "not-run",
-      "reason": "Requires normal pnpm/tsdown build to produce lib/index.js; script is updated to require tool API 0.6.0."
+      "status": "blocked-before-normal-build",
+      "expectedToolApiVersion": "0.7.0",
+      "reason": "Normal pnpm/tsdown build is required to produce packages/fanfic/tool-fanfic/lib/index.js; preflight correctly fails loud while it is absent."
     },
     "fullPnpmInstallBuildTest": {
       "status": "blocked",
-      "reason": "Sandbox Node is 22.16.0 while Harness requires ^22.19 || >=24, and npm registry access is unavailable."
+      "reason": "Sandbox Node is 22.16.0 while Harness requires ^22.19 || >=24; pnpm is unavailable and npm registry access is unavailable."
     }
   }
 }

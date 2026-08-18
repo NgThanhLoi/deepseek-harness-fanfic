@@ -587,6 +587,89 @@ export interface Config {
 
 来源：[`packages/e2b/e2b/src/index.ts:43`](../packages/e2b/e2b/src/index.ts)
 
+<a id="deepseek-aidsh-fanfic"></a>
+
+## `@deepseek-ai/dsh-fanfic`
+
+```ts config-catalog
+/** Provider selection config. Omit when exactly one usable provider is mounted. */
+export interface FanficRuntimeConfig {
+  /** Registered provider id to select; omitted when only one provider is mounted. */
+  readonly provider?: string
+}
+```
+
+来源：[`packages/fanfic/fanfic/src/index.ts:89`](../packages/fanfic/fanfic/src/index.ts)
+
+<a id="deepseek-aidsh-fanfic-local"></a>
+
+## `@deepseek-ai/dsh-fanfic-local`
+
+需要：`fanfic`
+
+```ts config-catalog
+/** Local provider plugin configuration. */
+export type Config = ProviderConfig
+
+/** Local canon-pack and branch-storage configuration. */
+export interface ProviderConfig {
+  /** Provider id registered on `ctx.fanfic`. */
+  providerId: string
+  /** Directory containing manifest.json, source.json, chapters.ndjson, and graph/*.ndjson. */
+  canonPackDir: string
+  /** Writable root whose branches/ child stores fanfic overlays. */
+  stateDir: string
+  /** Hard cap on source hits returned by one search. */
+  maxSearchResults: number
+  /** Hard cap on characters in one returned source excerpt. */
+  maxExcerptChars: number
+  /** Per-category cap on structured records in one snapshot. */
+  maxStructuredRecords: number
+  /** Maximum graph-expanded entities automatically admitted into one author context. */
+  authorContextMaxEntities: number
+  /** Source-search limit used while composing author context. */
+  authorContextSearchLimit: number
+  /** Maximum character dossiers composed into one author context. */
+  authorContextCharacterLimit: number
+  /** Source-evidence hits requested for each automatic character dossier. */
+  authorContextEvidenceLimit: number
+  /** Number of accepted chapter summaries returned by Story Director context. */
+  storyRecentSummaryLimit: number
+  /** Maximum dialogue fragments extracted from one character voice sample. */
+  voiceDialogueFragmentLimit: number
+  /** Maximum source chapters used to form one narrative-style reference aggregate. */
+  styleReferenceChapterLimit: number
+  /** Maximum characters returned in one source style-evidence excerpt. */
+  styleSampleExcerptChars: number
+  /** Maximum draft characters scanned by one anti-copy request. */
+  antiCopyMaxDraftChars: number
+  /** Hard cap on anti-copy findings returned to a caller. */
+  antiCopyMaxFindings: number
+  /** Relative drift ratio used for broad quantitative style warnings. */
+  styleDeviationRatio: number
+  /** Larger core-metric drift that requires revision before a style receipt may be issued. */
+  styleRevisionRequiredRatio: number
+  /** Maximum active records from each branch category admitted into author_context. */
+  authorContextBranchRecordLimit: number
+  /** Maximum source excerpts admitted into canonTruth inside author_context. */
+  authorContextSourceExcerptLimit: number
+  /** Hard serialized JSON budget for author_context; compaction removes optional evidence first. */
+  authorContextMaxJsonChars: number
+  /** Maximum Han characters in a paragraph still considered ultra-short by the prose-quality guard. */
+  proseQualityUltraShortHanChars: number
+  /** Consecutive ultra-short paragraphs that require revision. */
+  proseQualityMaxUltraShortRun: number
+  /** Tail ultra-short paragraph ratio that requires revision. */
+  proseQualityTailUltraShortRatio: number
+  /** Minimum Han-bigram diversity accepted for long drafts. */
+  proseQualityMinBigramDiversity: number
+  /** Filler-phrase hits in the draft tail that require revision. */
+  proseQualityTailFillerLimit: number
+}
+```
+
+来源：[`packages/fanfic/fanfic-local/src/index.ts:9`](../packages/fanfic/fanfic-local/src/index.ts)
+
 <a id="deepseek-aidsh-fs-local"></a>
 
 ## `@deepseek-ai/dsh-fs-local`
@@ -2374,6 +2457,42 @@ export interface Config {
 
 来源：[`packages/shell/tool-bash-persistent/src/index.ts:400`](../packages/shell/tool-bash-persistent/src/index.ts)
 
+<a id="deepseek-aidsh-tool-fanfic"></a>
+
+## `@deepseek-ai/dsh-tool-fanfic`
+
+需要：`fanfic` · `tools` · `systemPrompt`
+
+```ts config-catalog
+/** Model-facing fanfic-tool limits. */
+export interface Config {
+  /** Search limit used when the model omits `limit`. */
+  defaultSearchLimit: number
+  /** Default graph-expansion entity limit. */
+  defaultContextExpansionLimit: number
+  /** Default source-evidence count for character dossiers. */
+  defaultCharacterEvidenceLimit: number
+  /** Default number of contextual voice samples. */
+  defaultVoiceSampleLimit: number
+  /** Default number of work-level narrative style samples. */
+  defaultStyleSampleLimit: number
+  /** Default minimum exact-overlap length used by anti-copy checks. */
+  defaultAntiCopyMinPhraseChars: number
+  /** Default maximum anti-copy findings returned to the model. */
+  defaultAntiCopyMaxFindings: number
+  /** Default source-evidence count for power assessment. */
+  defaultPowerEvidenceLimit: number
+  /** Default chapter/family work-item count returned by enrichment planning. */
+  defaultEnrichmentBatchSize: number
+  /** Default Story Director horizon used when the model omits a horizon size. */
+  defaultStoryHorizonSize: number
+  /** Maximum structured claims accepted by one deterministic audit call. */
+  maxAuditClaims: number
+}
+```
+
+来源：[`packages/fanfic/tool-fanfic/src/index.ts:30`](../packages/fanfic/tool-fanfic/src/index.ts)
+
 <a id="deepseek-aidsh-tool-fs"></a>
 
 ## `@deepseek-ai/dsh-tool-fs`
@@ -3131,6 +3250,7 @@ export interface Config {
 - `@deepseek-ai/dsh-client-web`（[`packages/client/web/src/index.ts`](../packages/client/web/src/index.ts)）
 - `@deepseek-ai/dsh-client-web-react`（[`packages/client/web-react/src/index.ts`](../packages/client/web-react/src/index.ts)）
 - `@deepseek-ai/dsh-cmdline`（[`packages/boot/cmdline/src/index.ts`](../packages/boot/cmdline/src/index.ts)）
+- `@deepseek-ai/dsh-fanfic-authoring`（[`packages/bundle/fanfic-authoring/src/index.ts`](../packages/bundle/fanfic-authoring/src/index.ts)）
 - `@deepseek-ai/dsh-home-paths`（[`packages/util/home-paths/src/index.ts`](../packages/util/home-paths/src/index.ts)）
 - `@deepseek-ai/dsh-hook-protocol`（[`packages/hooks/hook-protocol/src/index.ts`](../packages/hooks/hook-protocol/src/index.ts)）
 - `@deepseek-ai/dsh-launch-environment`（[`packages/util/launch-environment/src/index.ts`](../packages/util/launch-environment/src/index.ts)）

@@ -26,7 +26,7 @@
 | `@deepseek-ai/dsh-tool-bash-persistent` | `bash` | `ctx.tools`、`ctx.terminals`、`an owning Agent at execution time` | `tool/call`、`PTY shell state`、`tool/result` | - | 一个按所有者隔离的持久 bash 工具；部署组合提供 PTY 后端，并可覆盖面向模型的环境描述。 |
 | `@deepseek-ai/dsh-tool-str-replace-editor` | `str_replace_editor` | `ctx.tools`、`ctx.fs` | `tool/call`、`fs/observed after view presence/absence, edit absence, or successful mutation`、`tool/result` | - | 基于文件系统 seam 的独立查看／创建／唯一字面量替换／按行插入工具；可与任何 shell 或终端接口组合。 |
 | `@deepseek-ai/dsh-tool-fs` | `edit`、`read`、`read_image`、`write` | `ctx.tools`、`ctx.fs`、`ctx.systemPrompt`、`ctx.attachments (read_image registration)`、`ctx.llm + an image-capable route (read_image execution)` | `tool/call`、`fs/write-intent or fs/edit-intent for mutations`、`fs/observed after read presence/absence or successful file operation`、`durable attachment (read_image)`、`tool/result` | - | 先读后写／编辑策略由 `@deepseek-ai/dsh-fs-observation-policy` 添加；它是一个 `fs/*` 事件门禁插件，不会改变 schema。加载这些工具的部署按预期也应加载该插件。没有 `ctx.attachments` 时 `read_image` 不会注册；其 schema 与路由无关，执行时除非确切路由的模型声明图像输入，否则拒绝。 |
-| `@deepseek-ai/dsh-tool-fanfic` | `anti_copy_guard`、`author_context`、`canon_causality_trace`、`canon_chapter_read`、`canon_context_expand`、`canon_enrichment_checkpoint`、`canon_enrichment_commit`、`canon_enrichment_plan`、`canon_enrichment_progress`、`canon_enrichment_validate`、`canon_search`、`canon_snapshot`、`canon_timeline_context`、`character_intelligence`、`character_voice_context`、`fanfic_apply_delta`、`fanfic_audit`、`fanfic_branch_create`、`fanfic_branch_get`、`fanfic_branch_list`、`fanfic_chapter_state`、`fanfic_divergence_record`、`fanfic_impact_scan`、`fanfic_intent_update`、`fanfic_status`、`fanfic_style_audit`、`invention_upsert`、`mystery_truth_upsert`、`narrative_style_context`、`power_assess`、`story_arc_upsert`、`story_director_context`、`story_foreshadow_upsert`、`story_horizon_set`、`story_reconciliation_resolve`、`story_thread_upsert` | `ctx.tools`、`ctx.fanfic`、`ctx.systemPrompt`、`a read-only canon source + branch-state Provider at execution time` | `tool/call`、`mutable branch state through the fanfic Provider`、`tool/result` | - | 面向 `ctx.fanfic` 的选择启用同人写作工具，只能从 fanfic-authoring bundle patch 加载（绝不进入基础组合）。36 个模型可见的 schema 与提供方无关；部署方在执行时为它们提供正典包与分支状态提供方（例如 `@deepseek-ai/dsh-fanfic-local`）。 |
+| `@deepseek-ai/dsh-tool-fanfic` | `anti_copy_guard`、`author_context`、`canon_causality_trace`、`canon_chapter_read`、`canon_context_expand`、`canon_enrichment_checkpoint`、`canon_enrichment_commit`、`canon_enrichment_plan`、`canon_enrichment_progress`、`canon_enrichment_validate`、`canon_search`、`canon_snapshot`、`canon_timeline_context`、`character_intelligence`、`character_voice_context`、`fanfic_apply_delta`、`fanfic_audit`、`fanfic_branch_create`、`fanfic_branch_get`、`fanfic_branch_list`、`fanfic_chapter_state`、`fanfic_divergence_record`、`fanfic_draft_get`、`fanfic_draft_stage`、`fanfic_draft_update`、`fanfic_impact_scan`、`fanfic_intent_update`、`fanfic_status`、`fanfic_style_audit`、`invention_upsert`、`mystery_truth_upsert`、`narrative_style_context`、`power_assess`、`story_arc_upsert`、`story_director_context`、`story_foreshadow_upsert`、`story_horizon_set`、`story_reconciliation_resolve`、`story_thread_upsert` | `ctx.tools`、`ctx.fanfic`、`ctx.systemPrompt`、`a read-only canon source + branch-state Provider at execution time` | `tool/call`、`mutable branch state through the fanfic Provider`、`tool/result` | - | 面向 `ctx.fanfic` 的选择启用同人写作工具，只能从 fanfic-authoring bundle patch 加载（绝不进入基础组合）。39 个模型可见的 schema 与提供方无关；部署方在执行时为它们提供正典包与分支状态提供方（例如 `@deepseek-ai/dsh-fanfic-local`）。 |
 | `@deepseek-ai/dsh-tool-fs-search` | `glob`、`grep` | `ctx.tools`、`ctx.subprocess`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn 随包提供的 ripgrep 二进制文件（`@vscode/ripgrep`），并作为普通前台调用运行，绝不作为后台任务；无需在宿主机安装 `rg`，也不经过 shell 层。本目录使用 `sampleOverCapGlobResults: true`；部署必须显式选择该行为。结果超过上限时，会通过可选的 ctx.spillStore 后端保存完整的格式化列表；在共置部署中，如果后端公开本地路径，返回的定位信息可供后续读取／搜索。 |
 | `@deepseek-ai/dsh-tool-terminal` | `terminal_close`、`terminal_list`、`terminal_open`、`terminal_read`、`terminal_send`、`terminal_signal` | `ctx.tools`、`ctx.terminals`、`ctx.systemPrompt`、`ctx.jobs at call time for run_in_background` | `tool/call`、`tool/result` | - | 这 6 个终端工具需要选择启用，用于补充一次性 bash／文件系统工具。`terminal_send(run_in_background: true)` 会注册到 `ctx.jobs`；schema 不包含 TUI、具名按键序列、BEL、调整尺寸、自动启动和跨 agent 共享。 |
 | `@deepseek-ai/dsh-tool-goal` | `create_goal`、`get_goal`、`update_goal` | `ctx.tools`、`ctx.agents`、`ctx.goals`、`ctx.systemPrompt`、`a calling Agent in an authorized open turn` | `tool/call`、`goal/change for mutations`、`tool/result` | - | create、edit、pause 和 resume 要求直接来自人类的根权限；complete 和 blocked 也接受确切的当前 Goal Round。blocked 的默认下限是 3 个获准的 Round。 |
@@ -779,24 +779,31 @@ pwsh 工具是 Windows 组合中 bash 执行器 seam 的 PowerShell 方言消费
 glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn 随包提供的 ripgrep 二进制文件（`@vscode/ripgrep`），并作为普通前台调用运行，绝不作为后台任务；无需在宿主机安装 `rg`，也不经过 shell 层。本目录使用 `sampleOverCapGlobResults: true`；部署必须显式选择该行为。结果超过上限时，会通过可选的 ctx.spillStore 后端保存完整的格式化列表；在共置部署中，如果后端公开本地路径，返回的定位信息可供后续读取／搜索。
 
 <a id="deepseek-aidsh-tool-fanfic"></a>
+
 ## `@deepseek-ai/dsh-tool-fanfic`
+
 ### `anti_copy_guard`
 
-检测草稿与整个不可变正典语料之间的精确规范化短语重叠。未来源内容的匹配位置仍隐藏在剧透截止点之后。
+检测草稿与整个不可变正典语料之间的精确规范化短语重叠。优先使用 fanfic_draft_stage 返回的 draftId；只有暂存草稿能获得提交收据。未来源内容的匹配位置仍隐藏在剧透截止点之后。
 
 ```json
 {
   "type": "object",
   "properties": {
+    "draftId": {
+      "type": "string",
+      "description": "Preferred staged draft id. The provider infers branch/chapter/revision from it."
+    },
     "draft": {
-      "type": "string"
+      "type": "string",
+      "description": "Optional ad-hoc text for non-commit checks. Cannot produce a commit receipt."
     },
     "asOfChapter": {
       "type": "integer"
     },
     "branchId": {
       "type": "string",
-      "description": "Optional branch UUID or unique branch name; required with fanficChapter to issue an anti-copy commit receipt."
+      "description": "Optional branch UUID or unique branch name for ad-hoc checks."
     },
     "fanficChapter": {
       "type": "integer"
@@ -809,12 +816,13 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
     }
   },
   "required": [
-    "draft",
     "asOfChapter"
   ]
 }
 ```
+
 来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
 ### `author_context`
 
 组合同人写作规划者／作者应使用的场景包：既定的正典真相、POV 认知、源证据、分叉策略、可选分支覆盖层与工作流约束。
@@ -879,7 +887,9 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
   ]
 }
 ```
+
 来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
 ### `canon_causality_trace`
 
 按叙事截止点搜索已确立的、有源支撑的正典因果链。分叉之后使用此工具识别可能不再成立的依赖。
@@ -904,7 +914,9 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
   ]
 }
 ```
+
 来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
 ### `canon_chapter_read`
 
 仅当一章位于或早于调用方提供的剧透截止点时，读取该确切的章。
@@ -926,7 +938,9 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
   ]
 }
 ```
+
 来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
 ### `canon_context_expand`
 
 发现防剧透的图邻接实体——即使初始提示没有点名，它们也可能与场景相关。
@@ -957,7 +971,9 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
   ]
 }
 ```
+
 来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
 ### `canon_enrichment_checkpoint`
 
 在本次处理的所有已接受记录提交后，将一章与一个结构化记录族标记为已审核。被引用的记录 id 必须存在且来自该确切章节；只有实际审核确认没有值得录入的内容时才使用 noFindings。
@@ -1004,7 +1020,9 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
   ]
 }
 ```
+
 来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
 ### `canon_enrichment_commit`
 
 把先前通过令牌验证的结构化正典记录提交到本地已验证的补全覆盖层。不可变的基础正典包永远不会被修改。
@@ -1055,7 +1073,9 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
   ]
 }
 ```
+
 来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
 ### `canon_enrichment_plan`
 
 返回选定结构化记录族尚未审核的后续源章节。这是由 LLM 驱动的正典消化的确定性工作队列。
@@ -1099,7 +1119,9 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
   ]
 }
 ```
+
 来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
 ### `canon_enrichment_progress`
 
 检查章节 × 记录族的有效补全覆盖率，避免重复消化已审核的源单元。
@@ -1140,7 +1162,9 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
   ]
 }
 ```
+
 来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
 ### `canon_enrichment_validate`
 
 将提议的结构化正典记录与确切的不变章节摘录进行校验。只有证据与记录结构都通过验证时才返回令牌。
@@ -1187,7 +1211,9 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
   ]
 }
 ```
+
 来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
 ### `canon_search`
 
 在显式的叙事章节截止点之前搜索不可变的正典源文本。未来章节在排序前被排除。
@@ -1215,7 +1241,9 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
   ]
 }
 ```
+
 来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
 ### `canon_snapshot`
 
 构建结构化的防剧透正典快照：时间事实、POV 知识、身份、实力、关系、谜题、事件与有界源证据。
@@ -1248,7 +1276,9 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
   ]
 }
 ```
+
 来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
 ### `canon_timeline_context`
 
 在一个正典截止点查询防剧透的时间线／世界线规则、相关事件、已揭示的身份与源证据。
@@ -1281,7 +1311,9 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
   ]
 }
 ```
+
 来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
 ### `character_intelligence`
 
 从时间状态、身份、实力、关系、认知、分支覆盖层与源证据构建截止点安全的人物档案。缺失的数据报告为缺口，而不是编造。
@@ -1315,7 +1347,9 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
   ]
 }
 ```
+
 来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
 ### `character_voice_context`
 
 在一个正典截止点检索一个角色周围有界、有源支撑的对话／声音证据，外加任何结构化声音笔记。上下文片段不断言确切的说话者归属；用 canon_chapter_read 核实模糊片段。
@@ -1340,7 +1374,9 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
   ]
 }
 ```
+
 来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
 ### `fanfic_apply_delta`
 
 事务化的已接受章节提交。要求该确切草稿的正典／风格／防抄袭收据全部通过。新章节持久化结构化状态；重写显式继承或替换前一版活跃章节版本。
@@ -1359,9 +1395,9 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
     "fanficChapter": {
       "type": "integer"
     },
-    "draft": {
+    "draftId": {
       "type": "string",
-      "description": "Exact accepted prose that produced the audit receipts."
+      "description": "Staged draft id that produced the three audit receipts."
     },
     "auditReceiptIds": {
       "type": "array",
@@ -1552,12 +1588,14 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
     "branchId",
     "expectedRevision",
     "fanficChapter",
-    "draft",
+    "draftId",
     "auditReceiptIds"
   ]
 }
 ```
+
 来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
 ### `fanfic_audit`
 
 运行确定性的防剧透／揭示检查，并根据当前正典快照校验结构化知识、身份、正典事实与实力声明。缺失的图数据产生警告，而不是编造的事实。
@@ -1566,8 +1604,13 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
 {
   "type": "object",
   "properties": {
+    "draftId": {
+      "type": "string",
+      "description": "Preferred staged draft id; required for a commit receipt."
+    },
     "draft": {
-      "type": "string"
+      "type": "string",
+      "description": "Optional ad-hoc prose for non-commit inspection."
     },
     "asOfChapter": {
       "type": "integer"
@@ -1619,16 +1662,54 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
           "subject"
         ]
       }
+    },
+    "mysteryReveals": {
+      "type": "array",
+      "description": "Explicit original-mystery reveals present in this draft. Full truth requires at least one satisfied registered reveal condition.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "mysteryId": {
+            "type": "string"
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "partial",
+              "truth"
+            ]
+          },
+          "satisfiedConditions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "conditionEvidence": {
+            "type": "array",
+            "description": "Exact short excerpts from the staged draft that demonstrate the declared reveal condition.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "mysteryId",
+          "level"
+        ]
+      }
     }
   },
   "required": [
-    "draft",
     "asOfChapter",
     "povCharacter"
   ]
 }
 ```
+
 来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
 ### `fanfic_branch_create`
 
 在一个正典起始章节创建隔离的可变同人分支。原始正典保持不可变。
@@ -1656,6 +1737,30 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
         "soft-divergence",
         "hard-au"
       ]
+    },
+    "minHanChars": {
+      "type": "integer",
+      "description": "Durable minimum accepted Han-character count; defaults to 2500."
+    },
+    "maxHanChars": {
+      "type": "integer",
+      "description": "Durable maximum accepted Han-character count; defaults to 4000."
+    },
+    "defaultStyleMode": {
+      "type": "string",
+      "enum": [
+        "auto",
+        "jianghu",
+        "mystery",
+        "reincarnation-mission",
+        "banter-introspection",
+        "combat",
+        "high-level-strategy",
+        "cosmology-philosophy",
+        "exposition",
+        "ensemble-rumor",
+        "emotional"
+      ]
     }
   },
   "required": [
@@ -1664,7 +1769,9 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
   ]
 }
 ```
+
 来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
 ### `fanfic_branch_get`
 
 读取完整的管理分支快照，包括更晚的同人状态。不要把它当作场景上下文使用；请使用带 fanficChapter 的 author_context，以避免同人未来内容泄漏。
@@ -1683,7 +1790,9 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
   ]
 }
 ```
+
 来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
 ### `fanfic_branch_list`
 
 列出现有本地同人分支及其最新修订版本。
@@ -1694,7 +1803,9 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
   "properties": {}
 }
 ```
+
 来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
 ### `fanfic_chapter_state`
 
 检查一个同人章节版本所拥有的活跃结构化状态。重写前使用它决定继承、丢弃或替换什么，而无需抓取整个分支。
@@ -1717,7 +1828,9 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
   ]
 }
 ```
+
 来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
 ### `fanfic_divergence_record`
 
 记录分支停止遵循正典的事件。需要最新的分支修订版本，使并发写作者无法互相覆盖。
@@ -1771,7 +1884,86 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
   ]
 }
 ```
+
 来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+### `fanfic_draft_get`
+
+读取某个暂存草稿及其精确哈希／修订号。仅在需要检查暂存正文本身时使用。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "draftId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "draftId"
+  ]
+}
+```
+
+来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+### `fanfic_draft_stage`
+
+将一版完整章节草稿暂存一次。所有 v0.7 审计与最终提交都应引用返回的 draftId，而不是在多次工具调用之间复制正文。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "branchId": {
+      "type": "string",
+      "description": "Branch UUID or unique branch name."
+    },
+    "fanficChapter": {
+      "type": "integer"
+    },
+    "text": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "branchId",
+    "fanficChapter",
+    "text"
+  ]
+}
+```
+
+来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+### `fanfic_draft_update`
+
+替换某个暂存草稿的正文。更新会改变 draftHash／draftRevision，并使针对旧文本签发的收据失效。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "draftId": {
+      "type": "string"
+    },
+    "expectedDraftRevision": {
+      "type": "integer"
+    },
+    "text": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "draftId",
+    "expectedDraftRevision",
+    "text"
+  ]
+}
+```
+
+来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
 ### `fanfic_impact_scan`
 
 针对提议的分叉扫描有源支撑的因果链、依赖的正典事件、图邻接实体与当前分支因果线。这是依赖发现，而不是未来预言。
@@ -1808,7 +2000,9 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
   ]
 }
 ```
+
 来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
 ### `fanfic_intent_update`
 
 用 compare-and-set 修订版本替换分支作者意图。这是关于前提、分叉模式、主题、基调、POV、角色优先级、禁止结果与风格笔记的项目策略。
@@ -1870,17 +2064,44 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
       "items": {
         "type": "string"
       }
+    },
+    "minHanChars": {
+      "type": "integer"
+    },
+    "maxHanChars": {
+      "type": "integer"
+    },
+    "defaultStyleMode": {
+      "type": "string",
+      "enum": [
+        "auto",
+        "jianghu",
+        "mystery",
+        "reincarnation-mission",
+        "banter-introspection",
+        "combat",
+        "high-level-strategy",
+        "cosmology-philosophy",
+        "exposition",
+        "ensemble-rumor",
+        "emotional"
+      ]
     }
   },
   "required": [
     "branchId",
     "expectedRevision",
     "premise",
-    "divergenceMode"
+    "divergenceMode",
+    "minHanChars",
+    "maxHanChars",
+    "defaultStyleMode"
   ]
 }
 ```
+
 来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
 ### `fanfic_status`
 
 检查活跃的正典包、结构化图计数与分支状态目录。
@@ -1891,17 +2112,24 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
   "properties": {}
 }
 ```
+
 来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
 ### `fanfic_style_audit`
 
-针对所选场景模式的高层作品风格指标审计草稿，并运行语料库级的防抄袭守卫。风格漂移是建议性的；确切的源重叠应当重写。
+审计叙事风格漂移、持久汉字符数契约、文风退化与精确复制风险。优先使用暂存的 draftId。必须修订的问题会阻止签发风格收据。
 
 ```json
 {
   "type": "object",
   "properties": {
+    "draftId": {
+      "type": "string",
+      "description": "Preferred staged draft id; its branch Writing Contract is enforced automatically."
+    },
     "draft": {
-      "type": "string"
+      "type": "string",
+      "description": "Optional ad-hoc prose for non-commit inspection."
     },
     "asOfChapter": {
       "type": "integer"
@@ -1951,20 +2179,21 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
     },
     "targetMinHanChars": {
       "type": "integer",
-      "description": "Optional minimum Han-character count for the accepted chapter."
+      "description": "Ad-hoc only. Staged branch drafts always use the durable Writing Contract."
     },
     "targetMaxHanChars": {
       "type": "integer",
-      "description": "Optional maximum Han-character count for the accepted chapter."
+      "description": "Ad-hoc only. Staged branch drafts always use the durable Writing Contract."
     }
   },
   "required": [
-    "draft",
     "asOfChapter"
   ]
 }
 ```
+
 来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
 ### `invention_upsert`
 
 注册同人原创的造物、技法、组织、机制、角色或地点，并附上稳定的能力、约束、代价、来源与正典兼容性说明。
@@ -2062,7 +2291,9 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
   ]
 }
 ```
+
 来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
 ### `mystery_truth_upsert`
 
 持久化同人原创谜题背后的仅作者可见的真相。这是作者元数据，绝不能当作 POV 知识。
@@ -2121,6 +2352,12 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
             "type": "string"
           }
         },
+        "protectedRevealTerms": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "plannedPayoff": {
           "type": "string"
         },
@@ -2137,6 +2374,7 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
         "label",
         "secretTruth",
         "mechanism",
+        "protectedRevealTerms",
         "plannedPayoff"
       ]
     }
@@ -2148,7 +2386,9 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
   ]
 }
 ```
+
 来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
 ### `narrative_style_context`
 
 检索防剧透的作品级叙事节奏指导，适用于一个场景模式。返回聚合指标与有界的证据窗口；它不是要求逐字模仿某位在世作者或复制源文措辞的指令。
@@ -2203,7 +2443,9 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
   ]
 }
 ```
+
 来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
 ### `power_assess`
 
 在一个正典截止点评估一个或多个行动者有源支撑的能力约束。它刻意不从境界标签推断确定性的胜者。
@@ -2240,7 +2482,9 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
   ]
 }
 ```
+
 来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
 ### `story_arc_upsert`
 
 用显式 schema 与 compare-and-set 分支修订版本创建或替换一个 Story Director arc。
@@ -2328,7 +2572,9 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
   ]
 }
 ```
+
 来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
 ### `story_director_context`
 
 为分支构建紧凑的长篇规划包：活跃的 arc、按优先级排序的线索、到期的承诺、存活的伏笔、滚动章节地平线、近期摘要、未解决的分叉后果与确定性的关注项。
@@ -2354,7 +2600,9 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
   ]
 }
 ```
+
 来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
 ### `story_foreshadow_upsert`
 
 用显式的揭示时机元数据创建或替换一个伏笔／兑现承诺。
@@ -2432,7 +2680,9 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
   ]
 }
 ```
+
 来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
 ### `story_horizon_set`
 
 用显式验证的章节计划替换滚动的 3–5 章地平线。
@@ -2518,7 +2768,9 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
   ]
 }
 ```
+
 来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
 ### `story_reconciliation_resolve`
 
 在受影响的地平线／线索／伏笔／arc 元数据被审核并更新后，将一个 Story Director 对账问题标记为已解决。
@@ -2545,7 +2797,9 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
   ]
 }
 ```
+
 来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
 ### `story_thread_upsert`
 
 用显式字段创建或替换一个情节／角色／谜题／关系／主题线索。
@@ -2635,8 +2889,8 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
   ]
 }
 ```
+
 来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
-面向 `ctx.fanfic` 的选择启用同人写作工具，只能从 fanfic-authoring bundle patch 加载（绝不进入基础组合）。36 个模型可见的 schema 与提供方无关；部署方在执行时为它们提供正典包与分支状态提供方（例如 `@deepseek-ai/dsh-fanfic-local`）。
 
 <a id="deepseek-aidsh-tool-terminal"></a>
 

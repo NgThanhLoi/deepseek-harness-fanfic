@@ -327,6 +327,14 @@ export interface FanficCausalThread {
 }
 
 
+/** Durable prose acceptance contract owned by one fanfic branch. */
+export interface FanficWritingContract {
+  readonly language: 'zh-CN'
+  readonly minHanChars: number
+  readonly maxHanChars: number
+  readonly defaultStyleMode: NarrativeStyleMode
+}
+
 /** Author-owned project intent; unlike canon records this is mutable branch policy. */
 export interface FanficAuthorIntent {
   readonly premise: string
@@ -337,6 +345,7 @@ export interface FanficAuthorIntent {
   readonly characterPriorities: readonly string[]
   readonly forbiddenOutcomes: readonly string[]
   readonly styleNotes: readonly string[]
+  readonly writingContract: FanficWritingContract
 }
 
 /** One long-form story arc owned by the author, not by source canon. */
@@ -404,6 +413,8 @@ export interface FanficMysteryTruth {
   readonly allowedClues: readonly string[]
   readonly falseLeads: readonly string[]
   readonly revealConditions: readonly string[]
+  /** Terms whose appearance constitutes a partial/full author-truth reveal and therefore requires an explicit reveal declaration. */
+  readonly protectedRevealTerms: readonly string[]
   readonly plannedPayoff: string
   readonly relatedThreads: readonly string[]
 }
@@ -436,6 +447,8 @@ export interface FanficChapterVersion {
   readonly replacesVersionId?: string
   /** Existing causal-thread ids resolved by this accepted chapter version. */
   readonly resolvedCausalThreadIds: readonly string[]
+  readonly draftId: string
+  readonly draftHash: string
   readonly createdAt: string
   readonly supersededAt?: string
 }
@@ -473,7 +486,7 @@ export interface FanficStoryDirectorState {
 
 /** Persistent mutable branch over immutable canon. */
 export interface FanficBranch {
-  readonly version: 2
+  readonly version: 3
   readonly id: FanficBranchId
   readonly name: string
   readonly baseChapter: number
@@ -516,41 +529,17 @@ export interface UpdateFanficStoryDirectorRequest {
 }
 
 /** Upsert one story arc with compare-and-set branch revision. */
-export interface UpsertFanficStoryArcRequest {
-  readonly branchId: FanficBranchId
-  readonly expectedRevision: number
-  readonly arc: FanficStoryArc
-}
+export interface UpsertFanficStoryArcRequest { readonly branchId: FanficBranchId; readonly expectedRevision: number; readonly arc: FanficStoryArc }
 /** Upsert one story thread with compare-and-set branch revision. */
-export interface UpsertFanficStoryThreadRequest {
-  readonly branchId: FanficBranchId
-  readonly expectedRevision: number
-  readonly thread: FanficStoryThread
-}
+export interface UpsertFanficStoryThreadRequest { readonly branchId: FanficBranchId; readonly expectedRevision: number; readonly thread: FanficStoryThread }
 /** Upsert one foreshadow with compare-and-set branch revision. */
-export interface UpsertFanficForeshadowRequest {
-  readonly branchId: FanficBranchId
-  readonly expectedRevision: number
-  readonly foreshadow: FanficForeshadow
-}
+export interface UpsertFanficForeshadowRequest { readonly branchId: FanficBranchId; readonly expectedRevision: number; readonly foreshadow: FanficForeshadow }
 /** Replace the rolling chapter horizon with compare-and-set branch revision. */
-export interface SetFanficHorizonRequest {
-  readonly branchId: FanficBranchId
-  readonly expectedRevision: number
-  readonly horizon: readonly FanficChapterPlan[]
-}
+export interface SetFanficHorizonRequest { readonly branchId: FanficBranchId; readonly expectedRevision: number; readonly horizon: readonly FanficChapterPlan[] }
 /** Upsert one author-only mystery truth record. */
-export interface UpsertFanficMysteryTruthRequest {
-  readonly branchId: FanficBranchId
-  readonly expectedRevision: number
-  readonly mysteryTruth: FanficMysteryTruth
-}
+export interface UpsertFanficMysteryTruthRequest { readonly branchId: FanficBranchId; readonly expectedRevision: number; readonly mysteryTruth: FanficMysteryTruth }
 /** Upsert one fanfic-original invention record. */
-export interface UpsertFanficInventionRequest {
-  readonly branchId: FanficBranchId
-  readonly expectedRevision: number
-  readonly invention: FanficInvention
-}
+export interface UpsertFanficInventionRequest { readonly branchId: FanficBranchId; readonly expectedRevision: number; readonly invention: FanficInvention }
 
 /** Request a compact Director packet around one fanfic chapter. */
 export interface StoryDirectorContextRequest {
@@ -573,8 +562,8 @@ export interface StoryDirectorContext {
   readonly horizon: readonly FanficChapterPlan[]
   readonly recentChapterSummaries: readonly { readonly fanficChapter: number; readonly summary: string }[]
   readonly unresolvedCausalThreads: readonly FanficCausalThread[]
-  readonly reconciliation: readonly FanficDirectorReconciliation[]
   readonly attention: readonly string[]
+  readonly reconciliation: readonly FanficDirectorReconciliation[]
   readonly cautions: readonly string[]
 }
 
@@ -589,6 +578,33 @@ export interface RecordFanficDivergenceRequest {
   readonly summary: string
   readonly immediateConsequences: readonly string[]
   readonly openQuestions: readonly string[]
+}
+
+/** Staged prose object used by all v0.7 audit and commit operations. */
+export interface FanficDraft {
+  readonly id: string
+  readonly branchId: FanficBranchId
+  readonly fanficChapter: number
+  readonly branchRevision: number
+  readonly draftRevision: number
+  readonly text: string
+  readonly draftHash: string
+  readonly createdAt: string
+  readonly updatedAt: string
+}
+
+/** Stage one draft against the current branch revision. */
+export interface StageFanficDraftRequest {
+  readonly branchId: FanficBranchId
+  readonly fanficChapter: number
+  readonly text: string
+}
+
+/** Replace staged prose without mutating branch state. */
+export interface UpdateFanficDraftRequest {
+  readonly draftId: string
+  readonly expectedDraftRevision: number
+  readonly text: string
 }
 
 /** Observer/Reflector delta committed after a generated chapter. */
@@ -614,8 +630,8 @@ export interface ApplyFanficDeltaRequest {
   readonly dropInheritedRecordIds?: readonly string[]
   /** Explicit acknowledgement required when replace would discard active structured state. */
   readonly confirmDroppedState?: boolean
-  /** Exact accepted draft whose audit receipts authorize this state transaction. */
-  readonly draft: string
+  /** Staged draft whose exact hash all audit receipts authorize. */
+  readonly draftId: string
   /** Canon/style/anti-copy receipt ids issued for the exact draft and branch revision. */
   readonly auditReceiptIds: readonly string[]
 }
@@ -625,6 +641,9 @@ export interface FanficAuditReceipt {
   readonly id: string
   readonly kind: 'canon' | 'style' | 'anti-copy'
   readonly draftHash: string
+  readonly draftId: string
+  readonly writingContractHash: string
+  readonly authorizedMysteryRevealIds: readonly string[]
   readonly branchId: FanficBranchId
   readonly fanficChapter: number
   readonly branchRevision: number
@@ -685,8 +704,21 @@ export interface AuthorContextRequest {
 }
 
 /** The packet a planner/writer consumes before generating a scene. */
+export interface AuthorContextTelemetry {
+  readonly serializedChars: number
+  readonly budgetChars: number
+  readonly compactionLevel: number
+  readonly omitted: {
+    readonly sourceExcerpts: number
+    readonly characterEvidence: number
+    readonly olderBranchRecords: number
+    readonly storyDirectorRecords: number
+  }
+}
+
+/** The packet a planner/writer consumes before generating a scene. */
 export interface AuthorContext {
-  readonly version: 3
+  readonly version: 4
   readonly scene: {
     readonly canonPoint: CanonPoint
     readonly fanficChapter?: number
@@ -712,6 +744,7 @@ export interface AuthorContext {
   }
   readonly hardConstraints: readonly string[]
   readonly workflow: readonly string[]
+  readonly telemetry: AuthorContextTelemetry
 }
 
 /** Structured claim extracted from a draft for deterministic validation. */
@@ -722,9 +755,19 @@ export interface FanficAuditClaim {
   readonly object?: string
 }
 
+/** Explicit declaration for prose that reveals author-only mystery truth. */
+export interface FanficMysteryRevealDeclaration {
+  readonly mysteryId: string
+  readonly level: 'partial' | 'truth'
+  readonly satisfiedConditions: readonly string[]
+  /** Exact excerpts from the staged draft that evidence why a reveal condition is satisfied. */
+  readonly conditionEvidence: readonly string[]
+}
+
 /** Draft audit request. */
 export interface FanficAuditRequest {
-  readonly draft: string
+  readonly draftId?: string
+  readonly draft?: string
   readonly asOfChapter: number
   readonly povCharacter: string
   readonly branchId?: FanficBranchId
@@ -733,6 +776,7 @@ export interface FanficAuditRequest {
   readonly claims: readonly FanficAuditClaim[]
   /** Known scene participants used by the independent draft claim extractor. */
   readonly participants?: readonly string[]
+  readonly mysteryReveals?: readonly FanficMysteryRevealDeclaration[]
 }
 
 /** One deterministic audit finding. */
@@ -758,6 +802,7 @@ export interface FanficAuditResult {
   readonly auditReceipt?: FanficAuditReceipt
   readonly issues: readonly FanficAuditIssue[]
   readonly coverage: FanficAuditCoverage
+  readonly authorizedMysteryRevealIds: readonly string[]
   readonly limitations: readonly string[]
 }
 
@@ -1001,7 +1046,8 @@ export interface NarrativeStyleContext {
 
 /** Exact-overlap request used to prevent accidental source copying, including future-canon text. */
 export interface AntiCopyGuardRequest {
-  readonly draft: string
+  readonly draftId?: string
+  readonly draft?: string
   readonly asOfChapter: number
   readonly branchId?: FanficBranchId
   readonly fanficChapter?: number
@@ -1028,9 +1074,32 @@ export interface AntiCopyGuardResult {
   readonly cautions: readonly string[]
 }
 
+/** One deterministic prose-quality finding independent of source-style similarity. */
+export interface ProseQualityFinding {
+  readonly severity: 'warning' | 'revision-required'
+  readonly code: string
+  readonly message: string
+  readonly evidence?: string
+}
+
+/** Deterministic prose-quality assessment for repetition and generation degeneration. */
+export interface ProseQualityResult {
+  readonly ok: boolean
+  readonly findings: readonly ProseQualityFinding[]
+  readonly metrics: {
+    readonly paragraphCount: number
+    readonly ultraShortParagraphRatio: number
+    readonly maxUltraShortParagraphRun: number
+    readonly repeatedSentenceCount: number
+    readonly hanBigramDiversity: number
+    readonly tailUltraShortParagraphRatio: number
+  }
+}
+
 /** Request for quantitative style drift plus anti-copy checks. */
 export interface NarrativeStyleAuditRequest extends NarrativeStyleContextRequest {
-  readonly draft: string
+  readonly draftId?: string
+  readonly draft?: string
   readonly targetMinHanChars?: number
   readonly targetMaxHanChars?: number
   readonly antiCopyMinPhraseChars: number
@@ -1054,13 +1123,9 @@ export interface NarrativeStyleAuditResult {
   readonly draftMetrics: NarrativeStyleMetrics
   readonly referenceMetrics: NarrativeStyleMetrics
   readonly deviations: readonly NarrativeStyleDeviation[]
+  readonly quality: ProseQualityResult
   readonly antiCopy: AntiCopyGuardResult
-  readonly lengthContract: {
-    readonly actualHanChars: number
-    readonly minHanChars?: number
-    readonly maxHanChars?: number
-    readonly withinTarget: boolean
-  }
+  readonly lengthContract: { readonly actualHanChars: number; readonly minHanChars?: number; readonly maxHanChars?: number; readonly withinTarget: boolean }
   readonly revisionGuidance: readonly string[]
   readonly limitations: readonly string[]
 }
@@ -1151,12 +1216,11 @@ export interface FanficProvider {
   setStoryHorizon(request: SetFanficHorizonRequest, signal?: AbortSignal): Promise<FanficBranch>
   upsertMysteryTruth(request: UpsertFanficMysteryTruthRequest, signal?: AbortSignal): Promise<FanficBranch>
   upsertInvention(request: UpsertFanficInventionRequest, signal?: AbortSignal): Promise<FanficBranch>
-  resolveDirectorReconciliation(request: {
-    readonly branchId: FanficBranchId
-    readonly expectedRevision: number
-    readonly reconciliationId: string
-  }, signal?: AbortSignal): Promise<FanficBranch>
+  resolveDirectorReconciliation(request: { readonly branchId: FanficBranchId; readonly expectedRevision: number; readonly reconciliationId: string }, signal?: AbortSignal): Promise<FanficBranch>
   storyDirectorContext(request: StoryDirectorContextRequest, signal?: AbortSignal): Promise<StoryDirectorContext>
+  stageDraft(request: StageFanficDraftRequest, signal?: AbortSignal): Promise<FanficDraft>
+  updateDraft(request: UpdateFanficDraftRequest, signal?: AbortSignal): Promise<FanficDraft>
+  getDraft(draftId: string, signal?: AbortSignal): Promise<FanficDraft>
   applyDelta(request: ApplyFanficDeltaRequest, signal?: AbortSignal): Promise<FanficBranch>
   audit(request: FanficAuditRequest, signal?: AbortSignal): Promise<FanficAuditResult>
 }

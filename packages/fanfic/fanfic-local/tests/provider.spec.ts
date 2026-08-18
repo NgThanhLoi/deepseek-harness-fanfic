@@ -1,14 +1,15 @@
-import { createHash } from 'node:crypto'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { FanficBranch, FanficStateDelta, FanficRewriteMode } from '@deepseek-ai/dsh-fanfic'
 import { LocalFanficProvider } from '../src/provider.ts'
 
+const hashOf = (text: string) => createHash('sha256').update(text).digest('hex')
+const SOURCE_SHA = hashOf('test-canon-source')
+
 const roots: string[] = []
-const sha = (text: string): string => createHash('sha256').update(text).digest('hex')
-const SOURCE_SHA = sha('Test Canon source')
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
@@ -63,31 +64,26 @@ async function harness() {
     maxSearchResults: 10, maxExcerptChars: 500, maxStructuredRecords: 32,
     authorContextMaxEntities: 12, authorContextSearchLimit: 8, authorContextCharacterLimit: 8,
     authorContextEvidenceLimit: 3, storyRecentSummaryLimit: 5, voiceDialogueFragmentLimit: 6,
-    styleReferenceChapterLimit: 8, styleSampleExcerptChars: 300,
-    antiCopyMaxDraftChars: 10000, antiCopyMaxFindings: 6, styleDeviationRatio: 0.8,
-    styleRevisionRequiredRatio: 100, authorContextBranchRecordLimit: 24,
-    authorContextSourceExcerptLimit: 2, authorContextMaxJsonChars: 40000,
+    styleReferenceChapterLimit: 8, styleSampleExcerptChars: 300, antiCopyMaxDraftChars: 10000, antiCopyMaxFindings: 6, styleDeviationRatio: 0.8,
+    styleRevisionRequiredRatio: 100, authorContextBranchRecordLimit: 24, authorContextSourceExcerptLimit: 2, authorContextMaxJsonChars: 40000,
+    proseQualityUltraShortHanChars: 8, proseQualityMaxUltraShortRun: 8, proseQualityTailUltraShortRatio: 0.6, proseQualityMinBigramDiversity: 0.58, proseQualityTailFillerLimit: 6,
   })
 }
 
-async function settlementReceipts(
-  provider: LocalFanficProvider,
-  branch: FanficBranch,
-  fanficChapter: number,
-  draft: string,
-): Promise<readonly string[]> {
-  const canon = await provider.audit({ draft, asOfChapter: 3, povCharacter: 'POV', branchId: branch.id, fanficChapter, participants: [], claims: [] })
-  const style = await provider.auditNarrativeStyle({
-    draft, asOfChapter: 3, mode: 'auto', query: '', participants: [], branchId: branch.id, fanficChapter,
-    sampleLimit: 2, antiCopyMinPhraseChars: 16, antiCopyMaxFindings: 4,
-  })
-  const copy = await provider.antiCopyGuard({
-    draft, asOfChapter: 3, branchId: branch.id, fanficChapter, minPhraseChars: 16, maxFindings: 4,
-  })
-  if (!canon.ok || !canon.auditReceipt || !style.ok || !style.auditReceipt || !copy.ok || !copy.auditReceipt) {
-    throw new Error('test settlement audits did not produce three passing receipts')
-  }
-  return [canon.auditReceipt.id, style.auditReceipt.id, copy.auditReceipt.id]
+
+const TEST_WRITING_CONTRACT = { language: 'zh-CN' as const, minHanChars: 1, maxHanChars: 5000, defaultStyleMode: 'auto' as const }
+
+async function createTestBranch(provider: LocalFanficProvider, request: Parameters<LocalFanficProvider['createBranch']>[0]): Promise<FanficBranch> {
+  return provider.createBranch({ ...request, authorIntent: { ...(request.authorIntent ?? {}), writingContract: TEST_WRITING_CONTRACT } })
+}
+
+async function settlementReceipts(provider: LocalFanficProvider, branch: FanficBranch, fanficChapter: number, text: string): Promise<{ readonly draftId: string; readonly auditReceiptIds: readonly string[] }> {
+  const draft = await provider.stageDraft({ branchId: branch.id, fanficChapter, text })
+  const canon = await provider.audit({ draftId: draft.id, asOfChapter: 3, povCharacter: 'POV', participants: [], claims: [] })
+  const style = await provider.auditNarrativeStyle({ draftId: draft.id, asOfChapter: 3, mode: 'auto', query: '', participants: [], sampleLimit: 2, antiCopyMinPhraseChars: 16, antiCopyMaxFindings: 4 })
+  const copy = await provider.antiCopyGuard({ draftId: draft.id, asOfChapter: 3, minPhraseChars: 16, maxFindings: 4 })
+  if (!canon.ok || !canon.auditReceipt || !style.ok || !style.auditReceipt || !copy.ok || !copy.auditReceipt) throw new Error('test settlement audits did not produce three passing receipts')
+  return { draftId: draft.id, auditReceiptIds: [canon.auditReceipt.id, style.auditReceipt.id, copy.auditReceipt.id] }
 }
 
 async function settle(
@@ -98,13 +94,13 @@ async function settle(
   rewriteMode?: FanficRewriteMode,
   confirmDroppedState?: boolean,
 ): Promise<FanficBranch> {
-  const auditReceiptIds = await settlementReceipts(provider, branch, delta.fanficChapter, draft)
+  const staged = await settlementReceipts(provider, branch, delta.fanficChapter, draft)
   return provider.applyDelta({
     branchId: branch.id,
     expectedRevision: branch.revision,
     delta,
-    draft,
-    auditReceiptIds,
+    draftId: staged.draftId,
+    auditReceiptIds: staged.auditReceiptIds,
     ...(rewriteMode === undefined ? {} : { rewriteMode }),
     ...(confirmDroppedState === undefined ? {} : { confirmDroppedState }),
   })
@@ -127,7 +123,7 @@ describe('LocalFanficProvider temporal isolation', () => {
 
   it('treats post-divergence canon as counterfactual and accepts branch-established replacements', async () => {
     const provider = await harness()
-    let branch = await provider.createBranch({ name: 'branch', baseChapter: 1, notes: '' })
+    let branch = await createTestBranch(provider, { name: 'branch', baseChapter: 1, notes: '' })
     branch = await provider.recordDivergence({
       branchId: branch.id, expectedRevision: branch.revision, atChapter: 2,
       summary: 'branch leaves canon', immediateConsequences: [], openQuestions: [],
@@ -144,7 +140,7 @@ describe('LocalFanficProvider temporal isolation', () => {
       fanficChapter: 2,
       facts: [{ subject: 'A', predicate: 'identity_is', object: 'B', validFromFanficChapter: 2 }],
       knowledge: [{ character: 'POV', subject: 'A', predicate: 'identity_is', object: 'B', summary: 'A就是B', stance: 'knows', fromFanficChapter: 2 }],
-    }, 'branch establishes A identity as B')
+    }, '分支确立了A即为B的身份。')
     const established = await provider.audit({
       draft: 'A就是B', asOfChapter: 3, povCharacter: 'POV', branchId: branch.id, fanficChapter: 3,
       claims: [
@@ -158,13 +154,13 @@ describe('LocalFanficProvider temporal isolation', () => {
 
   it('hides later branch state from an earlier fanfic chapter', async () => {
     const provider = await harness()
-    let branch = await provider.createBranch({ name: 'branch', baseChapter: 1, notes: '' })
+    let branch = await createTestBranch(provider, { name: 'branch', baseChapter: 1, notes: '' })
     branch = await settle(provider, branch, {
       fanficChapter: 2,
       chapterSummary: 'future state',
       facts: [{ subject: 'OC', predicate: 'alive', object: true, validFromFanficChapter: 2 }],
       knowledge: [{ character: 'POV', subject: 'OC', predicate: 'alive', object: 'true', summary: 'knows future', stance: 'knows', fromFanficChapter: 2 }],
-    }, 'future branch state')
+    }, '分支写下了其后的未来状态。')
     const context = await provider.authorContext({
       asOfChapter: 2, povCharacter: 'POV', participants: ['OC'], sceneGoal: 'rewrite chapter one', query: 'OC',
       branchId: branch.id, fanficChapter: 1,
@@ -244,7 +240,7 @@ describe('LocalFanficProvider temporal isolation', () => {
 
   it('persists Story Director metadata and surfaces long-form attention in author context', async () => {
     const provider = await harness()
-    let branch = await provider.createBranch({ name: 'director', baseChapter: 1, notes: '' })
+    let branch = await createTestBranch(provider, { name: 'director', baseChapter: 1, notes: '' })
     branch = await provider.updateStoryDirector({
       branchId: branch.id,
       expectedRevision: branch.revision,
@@ -284,8 +280,8 @@ describe('LocalFanficProvider temporal isolation', () => {
 
   it('supersedes rewritten chapter state and excludes the current chapter while rewriting', async () => {
     const provider = await harness()
-    let branch = await provider.createBranch({ name: 'rewrite', baseChapter: 1, notes: '' })
-    branch = await settle(provider, branch, { fanficChapter: 1, chapterSummary: 'old', facts: [{ subject: 'OC', predicate: 'state', object: 'old', validFromFanficChapter: 1 }] }, 'old chapter one')
+    let branch = await createTestBranch(provider, { name: 'rewrite', baseChapter: 1, notes: '' })
+    branch = await settle(provider, branch, { fanficChapter: 1, chapterSummary: 'old', facts: [{ subject: 'OC', predicate: 'state', object: 'old', validFromFanficChapter: 1 }] }, '这是第一章的旧正文。')
     const oldVersion = branch.chapterVersions.find(item => item.fanficChapter === 1 && item.status === 'active')!
     const whileRewriting = await provider.authorContext({
       asOfChapter: 2, povCharacter: 'POV', participants: ['OC'], sceneGoal: 'rewrite', query: 'OC', branchId: branch.id, fanficChapter: 1,
@@ -294,7 +290,7 @@ describe('LocalFanficProvider temporal isolation', () => {
     expect(whileRewriting.branch?.facts).toEqual([])
     expect(whileRewriting.branch?.chapterSummaries).toEqual([])
 
-    branch = await settle(provider, branch, { fanficChapter: 1, chapterSummary: 'new', facts: [{ subject: 'OC', predicate: 'state', object: 'new', validFromFanficChapter: 1 }] }, 'new chapter one', 'replace', true)
+    branch = await settle(provider, branch, { fanficChapter: 1, chapterSummary: 'new', facts: [{ subject: 'OC', predicate: 'state', object: 'new', validFromFanficChapter: 1 }] }, '这是第一章的新正文。', 'replace', true)
     expect(branch.chapterVersions.find(item => item.id === oldVersion.id)?.status).toBe('superseded')
     expect(branch.chapterVersions.filter(item => item.fanficChapter === 1 && item.status === 'active')).toHaveLength(1)
     const downstream = await provider.authorContext({
@@ -307,13 +303,13 @@ describe('LocalFanficProvider temporal isolation', () => {
 
   it('versions causal-thread resolutions so rewriting the resolving chapter restores prior state', async () => {
     const provider = await harness()
-    let branch = await provider.createBranch({ name: 'causal rewrite', baseChapter: 1, notes: '' })
-    branch = await settle(provider, branch, { fanficChapter: 1, causalThreads: [{ summary: 'open consequence', status: 'open', fromFanficChapter: 1 }] }, 'open causal consequence')
+    let branch = await createTestBranch(provider, { name: 'causal rewrite', baseChapter: 1, notes: '' })
+    branch = await settle(provider, branch, { fanficChapter: 1, causalThreads: [{ summary: 'open consequence', status: 'open', fromFanficChapter: 1 }] }, '这一敞开的后果待后续处理。')
     const threadId = branch.causalThreads[0]!.id
-    branch = await settle(provider, branch, { fanficChapter: 2, resolveCausalThreadIds: [threadId] }, 'resolve causal consequence')
+    branch = await settle(provider, branch, { fanficChapter: 2, resolveCausalThreadIds: [threadId] }, '本分支解决了这一敞开的后果。')
     expect(branch.causalThreads.find(item => item.id === threadId)?.status).toBe('resolved')
 
-    branch = await settle(provider, branch, { fanficChapter: 2, chapterSummary: 'rewrite without resolution' }, 'rewrite without resolution', 'replace', true)
+    branch = await settle(provider, branch, { fanficChapter: 2, chapterSummary: 'rewrite without resolution' }, '本章重写，不带有原解决状态。', 'replace', true)
     const downstream = await provider.authorContext({
       asOfChapter: 2, povCharacter: 'POV', participants: [], sceneGoal: 'after rewrite', query: '', branchId: branch.id, fanficChapter: 3,
       storyHorizonSize: 3, styleMode: 'auto', styleSampleLimit: 1,
@@ -323,7 +319,7 @@ describe('LocalFanficProvider temporal isolation', () => {
 
   it('preserves structured events before a same-chapter divergence without exposing raw chapter text as truth', async () => {
     const provider = await harness()
-    let branch = await provider.createBranch({ name: 'same chapter', baseChapter: 2, notes: '' })
+    let branch = await createTestBranch(provider, { name: 'same chapter', baseChapter: 2, notes: '' })
     branch = await provider.recordDivergence({
       branchId: branch.id, expectedRevision: branch.revision, atChapter: 2, afterEventId: 'event-a-c',
       summary: 'diverge after meeting', immediateConsequences: [], openQuestions: [],
@@ -359,7 +355,7 @@ describe('LocalFanficProvider temporal isolation', () => {
     const candidate = {
       kind: 'fact' as const,
       chapter: 2,
-      evidence: 'beta distinctive',
+      evidence: 'canonical phrase for overlap',
       payload: { id: 'enriched-beta', subject: 'A', predicate: 'saw', object: 'beta', validFromChapter: 2 },
     }
     const invalid = await provider.validateEnrichment({ ...candidate, evidence: 'not in source' })
@@ -380,11 +376,11 @@ describe('LocalFanficProvider temporal isolation', () => {
 })
 
 function chapter(index: number, title: string, text: string) {
-  return { index, title, part: 'Part', href: `ch-${index}.html`, sha256: sha(`chapter-${index}`), text }
+  return { index, title, part: 'Part', href: `ch-${index}.html`, sha256: hashOf(`chapter-${index}`), text }
 }
 
 function provenance(chapterIndex: number) {
-  return { sourceSha256: SOURCE_SHA, chapter: chapterIndex, chapterSha256: sha(`chapter-${chapterIndex}`), href: `ch-${chapterIndex}.html` }
+  return { sourceSha256: SOURCE_SHA, chapter: chapterIndex, chapterSha256: hashOf(`chapter-${chapterIndex}`), href: `ch-${chapterIndex}.html` }
 }
 
 async function writeNdjson(path: string, rows: readonly unknown[]): Promise<void> {

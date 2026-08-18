@@ -25,7 +25,7 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-str-replace-editor` | `str_replace_editor` | `ctx.tools`, `ctx.fs` | `tool/call`, `fs/observed after view presence/absence, edit absence, or successful mutation`, `tool/result` | - | Standalone view/create/unique literal replace/line insert tool over the filesystem seam; it composes with any shell or terminal API. |
 | `@deepseek-ai/dsh-tool-fs` | `edit`, `read`, `read_image`, `write` | `ctx.tools`, `ctx.fs`, `ctx.systemPrompt`, `ctx.attachments (read_image registration)`, `ctx.llm + an image-capable route (read_image execution)` | `tool/call`, `fs/write-intent or fs/edit-intent for mutations`, `fs/observed after read presence/absence or successful file operation`, `durable attachment (read_image)`, `tool/result` | - | The read-before-write/edit policy is added by `@deepseek-ai/dsh-fs-observation-policy` (an `fs/*` event-gate plugin, no schema change); a deployment that loads these tools is expected to also load it. `read_image` is not registered without `ctx.attachments`; its schema is route-independent, and execution refuses unless the exact routed model declares image input. |
 | `@deepseek-ai/dsh-tool-fs-search` | `glob`, `grep` | `ctx.tools`, `ctx.subprocess`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | glob and grep are unconditional discovery tools that spawn the packaged ripgrep binary (`@vscode/ripgrep`) through ctx.subprocess as ordinary foreground calls (never background jobs) — no host `rg` install and no shell layer. The catalog uses `sampleOverCapGlobResults: true`; deployments must choose that behavior explicitly. Capped results save the complete formatted list through the optional ctx.spillStore backend; returned locators are follow-up-readable/searchable when the backend exposes local paths in co-located deployments. |
-| `@deepseek-ai/dsh-tool-fanfic` | `anti_copy_guard`, `author_context`, `canon_causality_trace`, `canon_chapter_read`, `canon_context_expand`, `canon_enrichment_checkpoint`, `canon_enrichment_commit`, `canon_enrichment_plan`, `canon_enrichment_progress`, `canon_enrichment_validate`, `canon_search`, `canon_snapshot`, `canon_timeline_context`, `character_intelligence`, `character_voice_context`, `fanfic_apply_delta`, `fanfic_audit`, `fanfic_branch_create`, `fanfic_branch_get`, `fanfic_branch_list`, `fanfic_chapter_state`, `fanfic_divergence_record`, `fanfic_impact_scan`, `fanfic_intent_update`, `fanfic_status`, `fanfic_style_audit`, `invention_upsert`, `mystery_truth_upsert`, `narrative_style_context`, `power_assess`, `story_arc_upsert`, `story_director_context`, `story_foreshadow_upsert`, `story_horizon_set`, `story_reconciliation_resolve`, `story_thread_upsert` | `ctx.tools`, `ctx.fanfic`, `ctx.systemPrompt`, `a read-only canon source + branch-state Provider at execution time` | `tool/call`, `mutable branch state through the fanfic Provider`, `tool/result` | - | Opt-in fanfic authoring tools over `ctx.fanfic`, loaded only from the fanfic-authoring bundle patch (never a base composition). The 36 model-visible schemas are provider-neutral; a deployment supplies a canon pack and branch-state Provider (e.g. `@deepseek-ai/dsh-fanfic-local`) at execution time. |
+| `@deepseek-ai/dsh-tool-fanfic` | `anti_copy_guard`, `author_context`, `canon_causality_trace`, `canon_chapter_read`, `canon_context_expand`, `canon_enrichment_checkpoint`, `canon_enrichment_commit`, `canon_enrichment_plan`, `canon_enrichment_progress`, `canon_enrichment_validate`, `canon_search`, `canon_snapshot`, `canon_timeline_context`, `character_intelligence`, `character_voice_context`, `fanfic_apply_delta`, `fanfic_audit`, `fanfic_branch_create`, `fanfic_branch_get`, `fanfic_branch_list`, `fanfic_chapter_state`, `fanfic_divergence_record`, `fanfic_draft_get`, `fanfic_draft_stage`, `fanfic_draft_update`, `fanfic_impact_scan`, `fanfic_intent_update`, `fanfic_status`, `fanfic_style_audit`, `invention_upsert`, `mystery_truth_upsert`, `narrative_style_context`, `power_assess`, `story_arc_upsert`, `story_director_context`, `story_foreshadow_upsert`, `story_horizon_set`, `story_reconciliation_resolve`, `story_thread_upsert` | `ctx.tools`, `ctx.fanfic`, `ctx.systemPrompt`, `a read-only canon source + branch-state Provider at execution time` | `tool/call`, `mutable branch state through the fanfic Provider`, `tool/result` | - | Opt-in fanfic authoring tools over `ctx.fanfic`, loaded only from the fanfic-authoring bundle patch (never a base composition). The 39 model-visible schemas are provider-neutral; a deployment supplies a canon pack and branch-state Provider (e.g. `@deepseek-ai/dsh-fanfic-local`) at execution time. |
 | `@deepseek-ai/dsh-tool-terminal` | `terminal_close`, `terminal_list`, `terminal_open`, `terminal_read`, `terminal_send`, `terminal_signal` | `ctx.tools`, `ctx.terminals`, `ctx.systemPrompt`, `ctx.jobs at call time for run_in_background` | `tool/call`, `tool/result` | - | The six terminal tools are opt-in and complement one-shot shell/filesystem tools. `terminal_send(run_in_background: true)` registers with `ctx.jobs`; TUI, named key sequences, BEL, resize, auto-start, and cross-agent sharing are absent from the schema. |
 | `@deepseek-ai/dsh-tool-goal` | `create_goal`, `get_goal`, `update_goal` | `ctx.tools`, `ctx.agents`, `ctx.goals`, `ctx.systemPrompt`, `a calling Agent in an authorized open turn` | `tool/call`, `goal/change for mutations`, `tool/result` | - | create, edit, pause, and resume require direct-human root authority; complete and blocked also accept the exact current goal round. The default blocked lower bound is three admitted rounds. |
 | `@deepseek-ai/dsh-schedule` | `schedule_create`, `schedule_delete`, `schedule_list` | `ctx.tools`, `ctx.sessions`, `Session persistence`, `a future live root Agent` | `tool/call`, `schedule/change create or delete`, `tool/result` | - | Registered only inside live root Agent scopes created after the opt-in Schedule plugin loads. Version 1 accepts after_seconds, explicit absolute at, and bounded fixed-rate every_seconds, and discloses session-local delivery; management reads and mutations require the shared Session persistence barrier. |
@@ -780,21 +780,26 @@ glob and grep are unconditional discovery tools that spawn the packaged ripgrep 
 
 ### `anti_copy_guard`
 
-Detect exact normalized phrase overlap between a draft and the entire immutable canon corpus. Future-source match locations remain hidden behind the spoiler cutoff.
+Detect exact normalized phrase overlap against the immutable canon corpus. Prefer draftId from fanfic_draft_stage; only staged drafts can receive commit receipts. Future-source locations remain hidden behind the spoiler cutoff.
 
 ```json
 {
   "type": "object",
   "properties": {
+    "draftId": {
+      "type": "string",
+      "description": "Preferred staged draft id. The provider infers branch/chapter/revision from it."
+    },
     "draft": {
-      "type": "string"
+      "type": "string",
+      "description": "Optional ad-hoc text for non-commit checks. Cannot produce a commit receipt."
     },
     "asOfChapter": {
       "type": "integer"
     },
     "branchId": {
       "type": "string",
-      "description": "Optional branch UUID or unique branch name; required with fanficChapter to issue an anti-copy commit receipt."
+      "description": "Optional branch UUID or unique branch name for ad-hoc checks."
     },
     "fanficChapter": {
       "type": "integer"
@@ -807,7 +812,6 @@ Detect exact normalized phrase overlap between a draft and the entire immutable 
     }
   },
   "required": [
-    "draft",
     "asOfChapter"
   ]
 }
@@ -1387,9 +1391,9 @@ Transactional accepted-chapter commit. Requires passing canon/style/anti-copy re
     "fanficChapter": {
       "type": "integer"
     },
-    "draft": {
+    "draftId": {
       "type": "string",
-      "description": "Exact accepted prose that produced the audit receipts."
+      "description": "Staged draft id that produced the three audit receipts."
     },
     "auditReceiptIds": {
       "type": "array",
@@ -1580,7 +1584,7 @@ Transactional accepted-chapter commit. Requires passing canon/style/anti-copy re
     "branchId",
     "expectedRevision",
     "fanficChapter",
-    "draft",
+    "draftId",
     "auditReceiptIds"
   ]
 }
@@ -1596,8 +1600,13 @@ Run deterministic spoiler/reveal checks and validate structured knowledge, ident
 {
   "type": "object",
   "properties": {
+    "draftId": {
+      "type": "string",
+      "description": "Preferred staged draft id; required for a commit receipt."
+    },
     "draft": {
-      "type": "string"
+      "type": "string",
+      "description": "Optional ad-hoc prose for non-commit inspection."
     },
     "asOfChapter": {
       "type": "integer"
@@ -1649,10 +1658,46 @@ Run deterministic spoiler/reveal checks and validate structured knowledge, ident
           "subject"
         ]
       }
+    },
+    "mysteryReveals": {
+      "type": "array",
+      "description": "Explicit original-mystery reveals present in this draft. Full truth requires at least one satisfied registered reveal condition.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "mysteryId": {
+            "type": "string"
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "partial",
+              "truth"
+            ]
+          },
+          "satisfiedConditions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "conditionEvidence": {
+            "type": "array",
+            "description": "Exact short excerpts from the staged draft that demonstrate the declared reveal condition.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "mysteryId",
+          "level"
+        ]
+      }
     }
   },
   "required": [
-    "draft",
     "asOfChapter",
     "povCharacter"
   ]
@@ -1687,6 +1732,30 @@ Create an isolated mutable fanfic branch at a canon starting chapter. Original c
         "canon-compliant",
         "soft-divergence",
         "hard-au"
+      ]
+    },
+    "minHanChars": {
+      "type": "integer",
+      "description": "Durable minimum accepted Han-character count; defaults to 2500."
+    },
+    "maxHanChars": {
+      "type": "integer",
+      "description": "Durable maximum accepted Han-character count; defaults to 4000."
+    },
+    "defaultStyleMode": {
+      "type": "string",
+      "enum": [
+        "auto",
+        "jianghu",
+        "mystery",
+        "reincarnation-mission",
+        "banter-introspection",
+        "combat",
+        "high-level-strategy",
+        "cosmology-philosophy",
+        "exposition",
+        "ensemble-rumor",
+        "emotional"
       ]
     }
   },
@@ -1814,6 +1883,83 @@ Record the event where a branch stops following canon. Requires the latest branc
 
 Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
 
+### `fanfic_draft_get`
+
+Read one staged draft and its exact hash/revision. Use only when the staged prose itself needs inspection.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "draftId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "draftId"
+  ]
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+### `fanfic_draft_stage`
+
+Stage one complete chapter draft once. All v0.7 audits and the final commit should reference the returned draftId instead of copying prose between tool calls.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "branchId": {
+      "type": "string",
+      "description": "Branch UUID or unique branch name."
+    },
+    "fanficChapter": {
+      "type": "integer"
+    },
+    "text": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "branchId",
+    "fanficChapter",
+    "text"
+  ]
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+### `fanfic_draft_update`
+
+Replace prose in one staged draft. Updating changes draftHash/draftRevision and invalidates receipts issued for the older text.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "draftId": {
+      "type": "string"
+    },
+    "expectedDraftRevision": {
+      "type": "integer"
+    },
+    "text": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "draftId",
+    "expectedDraftRevision",
+    "text"
+  ]
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
 ### `fanfic_impact_scan`
 
 Scan source-backed causal links, dependent canon events, graph-adjacent entities, and current branch causal threads for a proposed divergence. This is dependency discovery, not future prophecy.
@@ -1914,13 +2060,38 @@ Replace the branch author intent with compare-and-set revision. This is project 
       "items": {
         "type": "string"
       }
+    },
+    "minHanChars": {
+      "type": "integer"
+    },
+    "maxHanChars": {
+      "type": "integer"
+    },
+    "defaultStyleMode": {
+      "type": "string",
+      "enum": [
+        "auto",
+        "jianghu",
+        "mystery",
+        "reincarnation-mission",
+        "banter-introspection",
+        "combat",
+        "high-level-strategy",
+        "cosmology-philosophy",
+        "exposition",
+        "ensemble-rumor",
+        "emotional"
+      ]
     }
   },
   "required": [
     "branchId",
     "expectedRevision",
     "premise",
-    "divergenceMode"
+    "divergenceMode",
+    "minHanChars",
+    "maxHanChars",
+    "defaultStyleMode"
   ]
 }
 ```
@@ -1942,14 +2113,19 @@ Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fan
 
 ### `fanfic_style_audit`
 
-Audit a draft against high-level work-style metrics for the selected scene mode and run the corpus-wide anti-copy guard. Style drift is advisory; exact source overlap should be rewritten.
+Audit narrative-style drift, durable Han-length contract, prose degeneration, and exact-copy risk. Prefer staged draftId. Revision-required findings block a style receipt.
 
 ```json
 {
   "type": "object",
   "properties": {
+    "draftId": {
+      "type": "string",
+      "description": "Preferred staged draft id; its branch Writing Contract is enforced automatically."
+    },
     "draft": {
-      "type": "string"
+      "type": "string",
+      "description": "Optional ad-hoc prose for non-commit inspection."
     },
     "asOfChapter": {
       "type": "integer"
@@ -1999,15 +2175,14 @@ Audit a draft against high-level work-style metrics for the selected scene mode 
     },
     "targetMinHanChars": {
       "type": "integer",
-      "description": "Optional minimum Han-character count for the accepted chapter."
+      "description": "Ad-hoc only. Staged branch drafts always use the durable Writing Contract."
     },
     "targetMaxHanChars": {
       "type": "integer",
-      "description": "Optional maximum Han-character count for the accepted chapter."
+      "description": "Ad-hoc only. Staged branch drafts always use the durable Writing Contract."
     }
   },
   "required": [
-    "draft",
     "asOfChapter"
   ]
 }
@@ -2173,6 +2348,12 @@ Persist the author-only truth behind a fanfic-original mystery. This is writer m
             "type": "string"
           }
         },
+        "protectedRevealTerms": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "plannedPayoff": {
           "type": "string"
         },
@@ -2189,6 +2370,7 @@ Persist the author-only truth behind a fanfic-original mystery. This is writer m
         "label",
         "secretTruth",
         "mechanism",
+        "protectedRevealTerms",
         "plannedPayoff"
       ]
     }
@@ -2706,7 +2888,7 @@ Create or replace one plot/character/mystery/relationship/theme thread with expl
 
 Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
 
-Opt-in fanfic authoring tools over `ctx.fanfic`, loaded only from the fanfic-authoring bundle patch (never a base composition). The 36 model-visible schemas are provider-neutral; a deployment supplies a canon pack and branch-state Provider (e.g. `@deepseek-ai/dsh-fanfic-local`) at execution time.
+Opt-in fanfic authoring tools over `ctx.fanfic`, loaded only from the fanfic-authoring bundle patch (never a base composition). The 39 model-visible schemas are provider-neutral; a deployment supplies a canon pack and branch-state Provider (e.g. `@deepseek-ai/dsh-fanfic-local`) at execution time.
 
 <a id="deepseek-aidsh-tool-terminal"></a>
 

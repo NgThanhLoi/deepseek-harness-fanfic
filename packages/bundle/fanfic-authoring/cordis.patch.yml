@@ -28,6 +28,11 @@
         authorContextBranchRecordLimit: 24
         authorContextSourceExcerptLimit: 2
         authorContextMaxJsonChars: 40000
+        proseQualityUltraShortHanChars: 8
+        proseQualityMaxUltraShortRun: 8
+        proseQualityTailUltraShortRatio: 0.6
+        proseQualityMinBigramDiversity: 0.58
+        proseQualityTailFillerLimit: 6
 
     - id: tool-fanfic
       name: '@deepseek-ai/dsh-tool-fanfic'

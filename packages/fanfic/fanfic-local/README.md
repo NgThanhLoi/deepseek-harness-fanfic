@@ -6,7 +6,7 @@ Filesystem Provider for `ctx.fanfic`. It loads immutable source canon plus a sep
 
 ## Configuration
 
-The local Provider takes explicit limits for source results/excerpts, structured records, automatic author-context expansion/search/dossier/evidence, recent Story Director summaries, dialogue fragments per voice sample, style-reference chapter count, style excerpt size, anti-copy draft/finding caps, and the broad style-deviation ratio. The bundle owns the shipped values so deployment policy is not hidden in Provider code. Service requests such as Story Director horizon size remain explicit at the `ctx.fanfic` boundary.
+The local Provider takes explicit limits for source results/excerpts, structured records, automatic author-context expansion/search/dossier/evidence, recent Story Director summaries, dialogue fragments per voice sample, style-reference chapter count, style excerpt size, anti-copy draft/finding caps, style-deviation ratios, Author Context hard budget, and Prose Quality Guard thresholds (ultra-short paragraph/run, tail-collapse, bigram-diversity, and filler cadence). The bundle owns the shipped values so deployment policy is not hidden in Provider code. Service requests such as Story Director horizon size remain explicit at the `ctx.fanfic` boundary.
 
 ## Canon pack and verified enrichment
 
@@ -36,13 +36,23 @@ The optional `style/style-bank.json` is a text-free derivative index tied to the
 
 `narrativeStyleContext()` applies `asOfChapter` before choosing reference chapters, aggregates work-level metrics, returns bounded source windows, and merges branch `authorIntent.styleNotes`. It explicitly treats these as pacing/dialogue/paragraph/suspense guidance rather than instructions to imitate a living author exactly.
 
-`antiCopyGuard()` normalizes whitespace and searches exact draft phrases against the entire immutable corpus. It scans future canon too so memorized source wording can be caught, but when a match is after `asOfChapter` it withholds the source chapter number. `auditNarrativeStyle()` combines broad metric-drift warnings with that exact-overlap guard. Exact overlap can fail the audit; metric drift remains advisory.
+`antiCopyGuard()` normalizes whitespace and searches exact draft phrases against the entire immutable corpus. It scans future canon too so memorized source wording can be caught, but when a match is after `asOfChapter` it withholds the source chapter number. `auditNarrativeStyle()` combines metric drift, durable Han-length enforcement, the Prose Quality Guard, and exact-overlap detection. Broad drift may remain advisory, while revision-required core drift, degeneration, length failure, or exact overlap prevents a settlement receipt.
 
 ## Branch storage
 
 Branches live under `<stateDir>/branches/<FanficBranchId>.json`. Divergences, author-intent replacements, Story Director replacements, and Observer/Reflector deltas require the caller's expected revision. A branch has its own narrative clock; branch-aware context/audit hide records from later fanfic chapters. Once a divergence is recorded, later source canon is counterfactual reference only unless branch state independently re-establishes it.
 
 `storyDirector` is durable author metadata containing arcs, prioritized story threads, foreshadow/payoff promises, and a rolling chapter horizon. `storyDirectorContext()` derives active/due work plus deterministic attention items such as an overdue planted clue or a high-priority thread absent from the horizon. Plans are not world truth. When `fanfic_apply_delta` accepts a chapter it automatically marks the matching horizon entry accepted, and it can resolve existing branch causal-thread ids rather than appending a disconnected “resolved” row.
+
+## v0.7 quality-enforced provider behavior
+
+Branch format v3 adds a persisted Draft Store under `<stateDir>/drafts/`. Staging binds prose to branch id, fanfic chapter, branch revision, draft revision, and SHA-256; updating a draft keeps its id but changes revision/hash. Canon/style/anti-copy receipts for settlement can only be issued for a staged draft and are invalid after the text, branch revision, or durable Writing Contract changes.
+
+`auditNarrativeStyle()` enforces the branch Writing Contract automatically and runs a configurable Prose Quality Guard. Revision-required signals cover excessive consecutive ultra-short paragraphs, tail collapse, repeated sentences, long-draft Han-bigram diversity collapse, and repeated filler cadence. These are deterministic failure signals, not a claim to certify literary excellence.
+
+Original mystery truths can declare `protectedRevealTerms` and `revealConditions`. A full reveal must be declared during canon audit, name a registered satisfied condition, and cite exact short evidence that actually occurs in the staged draft. A Story Director payoff related to an unrevealed mystery cannot settle without that canon-audit authorization.
+
+`authorContext()` v4 returns hard-budget telemetry. `scripts/fanfic/export_live_review.mjs` can export the final branch, active-only projection, all referenced staged drafts, Director/Mystery/Invention state, remaining receipts, and a review manifest for independent analysis.
 
 ## Model Experience
 
@@ -58,9 +68,3 @@ None directly; only Consumer-rendered results affect model history.
 - **Sparse structured graph** — source text remains authoritative when a row is absent; deterministic audit reports unverified claims rather than treating missing extraction as false.
 - **Evidence validation is deliberately mechanical** — it proves source presence and schema integrity, not that an ambiguous sentence has only one interpretation.
 - **Style classification is heuristic** — scene-mode scores only help retrieve useful reference windows. They do not claim a chapter has one exclusive genre or that matching aggregate metrics guarantees good prose.
-
-## v0.6 transactional provider behavior
-
-Chapter settlement is now transactional. Passing canon/style/anti-copy audits can issue short-lived receipts bound to the exact draft hash, branch id, fanfic chapter, and branch revision; `applyDelta()` requires all three distinct receipt kinds and consumes them only after a successful atomic branch write. This prevents a model from persisting a draft that failed a required audit or was changed after auditing.
-
-Rewrites declare `inherit` or `replace`. `inherit` clones the previous active version's chapter-owned structured records into the new version unless explicit record ids are dropped; `replace` starts empty and requires explicit confirmation when active structured state would be discarded. A later chapter cannot backfill an earlier chapter's ownership fields. Rewrites open a durable Story Director reconciliation issue. The provider also compacts `authorContext()` in stages to a configured hard JSON-character ceiling, keeping source evidence and full administrative branch state behind on-demand reads.

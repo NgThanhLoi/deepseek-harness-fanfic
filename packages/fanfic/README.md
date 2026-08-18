@@ -14,6 +14,6 @@ The fanfic group is an opt-in authoring capability family. It keeps immutable so
 
 The local stack now supports graph-based context expansion, character/voice/power/timeline/causality intelligence, token-bound enrichment, a persistent chapter×record-family enrichment coverage ledger, and durable Story Director state for arcs, threads, foreshadows, and a rolling chapter horizon. A connected LLM can therefore improve structured canon incrementally and manage long-form narrative promises without modifying the immutable source pack.
 
-## v0.6 transactional author layer
+## v0.7 quality-enforced author layer
 
-Live multi-chapter testing moved correctness enforcement from prompt convention into runtime transactions. Exact-draft audit receipts gate chapter persistence; rewrites explicitly inherit or replace chapter-owned state; branch names remove UUID transcription hazards; rewrite reconciliation keeps Story Director metadata from silently going stale; and author-context growth is bounded by a hard deployment budget. See `FANFIC_AUTHOR_BRAIN_WORKFLOW.md` for the operating protocol.
+Live endurance testing moved the next failure class from state correctness into quality correctness. v0.7 adds a durable Writing Contract, a staged Draft Store, deterministic prose-degeneration blocking, enforceable original-mystery reveal conditions, measured Author Context telemetry, and an active-state-aware review exporter. The v0.6 transactional rewrite/receipt/Director guarantees remain in place. See `FANFIC_AUTHOR_BRAIN_WORKFLOW.md` for the operating protocol.

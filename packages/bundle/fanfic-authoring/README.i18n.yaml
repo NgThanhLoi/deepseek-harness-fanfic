@@ -1,3 +1,6 @@
-# Bilingual-pair consistency record (docs/i18n/README.md).
-README.md: 9c7597c871fb577cadefa3463f773fb0e6ffe2e7
-README.zh.md: f241866fde0d4af1d3270ab55bda88ce61da6dcd
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/bundle/fanfic-authoring/README.md
+README.md: dc06280c9f017e44747fac2b60e8967c820131f2
+README.zh.md: e2dbc4c1e1bc0e2b81c6b7678143ec9bc2a73b11

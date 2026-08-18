@@ -4,7 +4,7 @@ English | [中文](fanfic.zh.md)
 
 `ctx.fanfic` ([`@deepseek-ai/dsh-fanfic`](../../packages/fanfic/fanfic)) is the opt-in fanfic authoring seam: an immutable source canon plus mutable author branches, with spoiler-safe lookups, verified enrichment, and transactional chapter settlement. It loads only through the [fanfic-authoring bundle patch](../../packages/bundle/fanfic-authoring), never a base composition.
 
-The [package README](../../packages/fanfic/fanfic/README.md) owns composition and service config, [`@deepseek-ai/dsh-fanfic-local`](../../packages/fanfic/fanfic-local/README.md) owns the in-repo provider over the shipped [《一世之尊》 canon pack](../../canon-packs/yishizhizun), and the 36 model-facing tools are catalogued in the [tool schema catalog](../tool-catalog.md#deepseek-aidsh-tool-fanfic). The generated Cordis API below records the provider-selecting service contract and is the method-level authority for every operation.
+The [package README](../../packages/fanfic/fanfic/README.md) owns composition and service config, [`@deepseek-ai/dsh-fanfic-local`](../../packages/fanfic/fanfic-local/README.md) owns the in-repo provider over the shipped [《一世之尊》 canon pack](../../canon-packs/yishizhizun), and the 39 model-facing tools are catalogued in the [tool schema catalog](../tool-catalog.md#deepseek-aidsh-tool-fanfic). The generated Cordis API below records the provider-selecting service contract and is the method-level authority for every operation.
 
 ## Canon and branches
 
@@ -28,7 +28,23 @@ For long-form branches, `story_director_context` composes the active arcs, threa
 
 ## Chapter settlement
 
-`fanfic_audit`, `fanfic_style_audit`, and `anti_copy_guard` each return a deterministic receipt for the exact draft, and `fanfic_apply_delta` (or a rewrite) requires all three receipts for that draft and branch revision. Rewrites choose `inherit`, which carries the previous active structured chapter state, or `replace`, which discards it and requires explicit confirmation when state would be lost; backfilling a later chapter's state into an earlier one is rejected. Metadata edits that follow a rewrite are reconciled explicitly through `story_reconciliation_resolve`.
+Final prose is staged once with `fanfic_draft_stage`, which assigns a durable `draftId`, revision, and SHA-256; `fanfic_draft_update` replaces text in a staged draft and invalidates receipts issued for the older text. `fanfic_audit`, `fanfic_style_audit`, and `anti_copy_guard` each return a deterministic receipt bound to that draft hash, the branch revision, and the branch's writing contract, and `fanfic_apply_delta` (or a rewrite) requires all three receipts for the same draft. Ad-hoc text remains inspectable but cannot receive a commit receipt. Rewrites choose `inherit`, which carries the previous active structured chapter state, or `replace`, which discards it and requires explicit confirmation when state would be lost; backfilling a later chapter's state into an earlier one is rejected. Metadata edits that follow a rewrite are reconciled explicitly through `story_reconciliation_resolve`.
+
+## Writing Contract
+
+Each branch persists a durable writing contract — `zh-CN`, 2,500–4,000 Han characters, `auto` style mode by default — carried on `fanfic_intent_update` with the author intent. `fanfic_style_audit` enforces the contract even when a caller passes weaker ad-hoc limits, binds its style receipts to the contract hash, and rejects drafts outside the Han range, so settlement cannot reuse a receipt after the contract changes.
+
+## Prose quality guard
+
+`fanfic_style_audit` deterministically checks consecutive ultra-short paragraphs, tail collapse, normalized repeated sentences, Han-bigram diversity collapse on long drafts, and repeated filler cadence. Revision-required degeneration, padding, or length failure cannot issue a style receipt; the thresholds are provider configuration, not source constants.
+
+## Mystery reveal guard
+
+Original mystery truths may register `protectedRevealTerms` and `revealConditions`. A full reveal in prose must be declared to `fanfic_audit` with a registered satisfied condition and exact short `conditionEvidence` that actually appears in the staged draft; an undeclared reveal or fabricated evidence is rejected, and a related planned payoff cannot settle unless the canon receipt authorizes that mystery id.
+
+## Versioning
+
+On-disk branches are format 3, author context packets are version 4, and the tool API is 0.7. Because DeepSeek Harness is pre-release, v0.7 branches reject older on-disk formats instead of migrating them; live tests use fresh state.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -65,7 +81,7 @@ status(signal?: AbortSignal): Promise<FanficStatus>
  * @param signal - cancellation signal.
  * @returns matching source excerpts.
  */
-search( request: CanonSearchRequest, signal?: AbortSignal, ): Promise<readonly CanonSearchHit[]>
+search(request: CanonSearchRequest, signal?: AbortSignal): Promise<readonly CanonSearchHit[]>
 
 /**
  * Read one source chapter under a spoiler cutoff.
@@ -73,7 +89,7 @@ search( request: CanonSearchRequest, signal?: AbortSignal, ): Promise<readonly C
  * @param signal - cancellation signal.
  * @returns source chapter.
  */
-readChapter( request: CanonChapterReadRequest, signal?: AbortSignal, ): Promise<CanonChapter>
+readChapter(request: CanonChapterReadRequest, signal?: AbortSignal): Promise<CanonChapter>
 
 /**
  * Compose canon state at one narrative point.
@@ -89,7 +105,7 @@ snapshot(request: CanonSnapshotRequest, signal?: AbortSignal): Promise<CanonSnap
  * @param signal - cancellation signal.
  * @returns author context packet.
  */
-authorContext( request: AuthorContextRequest, signal?: AbortSignal, ): Promise<AuthorContext>
+authorContext(request: AuthorContextRequest, signal?: AbortSignal): Promise<AuthorContext>
 
 /**
  * Query source-backed causal links.
@@ -97,7 +113,7 @@ authorContext( request: AuthorContextRequest, signal?: AbortSignal, ): Promise<A
  * @param signal - cancellation signal.
  * @returns bounded causal trace.
  */
-traceCausality( request: CanonCausalityTraceRequest, signal?: AbortSignal, ): Promise<CanonCausalityTrace>
+traceCausality(request: CanonCausalityTraceRequest, signal?: AbortSignal): Promise<CanonCausalityTrace>
 
 /**
  * Query worldline/timeline rules, relevant events, and source evidence at one cutoff.
@@ -105,7 +121,7 @@ traceCausality( request: CanonCausalityTraceRequest, signal?: AbortSignal, ): Pr
  * @param signal - cancellation signal.
  * @returns bounded timeline context.
  */
-timelineContext( request: CanonTimelineContextRequest, signal?: AbortSignal, ): Promise<CanonTimelineContext>
+timelineContext(request: CanonTimelineContextRequest, signal?: AbortSignal): Promise<CanonTimelineContext>
 
 /**
  * Expand explicit scene entities through spoiler-safe structured graph edges.
@@ -113,7 +129,7 @@ timelineContext( request: CanonTimelineContextRequest, signal?: AbortSignal, ): 
  * @param signal - cancellation signal.
  * @returns discovered related entities with reasons.
  */
-expandContext( request: CanonContextExpansionRequest, signal?: AbortSignal, ): Promise<CanonContextExpansion>
+expandContext(request: CanonContextExpansionRequest, signal?: AbortSignal): Promise<CanonContextExpansion>
 
 /**
  * Build one source-backed character dossier at the requested cutoff.
@@ -121,7 +137,7 @@ expandContext( request: CanonContextExpansionRequest, signal?: AbortSignal, ): P
  * @param signal - cancellation signal.
  * @returns temporal state, epistemics, relationships, powers, evidence, and gaps.
  */
-characterIntelligence( request: CharacterIntelligenceRequest, signal?: AbortSignal, ): Promise<CharacterIntelligence>
+characterIntelligence(request: CharacterIntelligenceRequest, signal?: AbortSignal): Promise<CharacterIntelligence>
 
 /**
  * Return bounded source-backed dialogue/voice evidence for one character.
@@ -129,7 +145,7 @@ characterIntelligence( request: CharacterIntelligenceRequest, signal?: AbortSign
  * @param signal - cancellation signal.
  * @returns contextual source windows and structured voice notes.
  */
-characterVoiceContext( request: CharacterVoiceContextRequest, signal?: AbortSignal, ): Promise<CharacterVoiceContext>
+characterVoiceContext(request: CharacterVoiceContextRequest, signal?: AbortSignal): Promise<CharacterVoiceContext>
 
 /**
  * Compose cutoff-safe work-level narrative rhythm and scene-mode evidence.
@@ -137,7 +153,7 @@ characterVoiceContext( request: CharacterVoiceContextRequest, signal?: AbortSign
  * @param signal - cancellation signal.
  * @returns high-level narrative style context.
  */
-narrativeStyleContext( request: NarrativeStyleContextRequest, signal?: AbortSignal, ): Promise<NarrativeStyleContext>
+narrativeStyleContext(request: NarrativeStyleContextRequest, signal?: AbortSignal): Promise<NarrativeStyleContext>
 
 /**
  * Detect exact draft overlap against immutable source text without exposing future-source locations.
@@ -145,7 +161,7 @@ narrativeStyleContext( request: NarrativeStyleContextRequest, signal?: AbortSign
  * @param signal - cancellation signal.
  * @returns corpus-wide anti-copy findings.
  */
-antiCopyGuard( request: AntiCopyGuardRequest, signal?: AbortSignal, ): Promise<AntiCopyGuardResult>
+antiCopyGuard(request: AntiCopyGuardRequest, signal?: AbortSignal): Promise<AntiCopyGuardResult>
 
 /**
  * Audit high-level narrative drift and accidental source overlap.
@@ -153,7 +169,7 @@ antiCopyGuard( request: AntiCopyGuardRequest, signal?: AbortSignal, ): Promise<A
  * @param signal - cancellation signal.
  * @returns quantitative style and anti-copy findings.
  */
-auditNarrativeStyle( request: NarrativeStyleAuditRequest, signal?: AbortSignal, ): Promise<NarrativeStyleAuditResult>
+auditNarrativeStyle(request: NarrativeStyleAuditRequest, signal?: AbortSignal): Promise<NarrativeStyleAuditResult>
 
 /**
  * Assess known power constraints without inventing a fight winner.
@@ -161,7 +177,7 @@ auditNarrativeStyle( request: NarrativeStyleAuditRequest, signal?: AbortSignal, 
  * @param signal - cancellation signal.
  * @returns evidence-first capability assessment.
  */
-assessPower( request: PowerAssessmentRequest, signal?: AbortSignal, ): Promise<PowerAssessment>
+assessPower(request: PowerAssessmentRequest, signal?: AbortSignal): Promise<PowerAssessment>
 
 /**
  * Scan canon dependencies and branch threads affected by a proposed divergence.
@@ -169,7 +185,7 @@ assessPower( request: PowerAssessmentRequest, signal?: AbortSignal, ): Promise<P
  * @param signal - cancellation signal.
  * @returns relevant dependencies and open branch threads.
  */
-impactScan( request: FanficImpactScanRequest, signal?: AbortSignal, ): Promise<FanficImpactScan>
+impactScan(request: FanficImpactScanRequest, signal?: AbortSignal): Promise<FanficImpactScan>
 
 /**
  * Validate a structured enrichment candidate against immutable chapter evidence.
@@ -177,7 +193,7 @@ impactScan( request: FanficImpactScanRequest, signal?: AbortSignal, ): Promise<F
  * @param signal - cancellation signal.
  * @returns evidence result and token when valid.
  */
-validateEnrichment( candidate: CanonEnrichmentCandidate, signal?: AbortSignal, ): Promise<CanonEnrichmentValidation>
+validateEnrichment(candidate: CanonEnrichmentCandidate, signal?: AbortSignal): Promise<CanonEnrichmentValidation>
 
 /**
  * Commit a token-bound verified enrichment record into the provider overlay.
@@ -185,7 +201,7 @@ validateEnrichment( candidate: CanonEnrichmentCandidate, signal?: AbortSignal, )
  * @param signal - cancellation signal.
  * @returns committed record metadata.
  */
-commitEnrichment( request: CanonEnrichmentCommitRequest, signal?: AbortSignal, ): Promise<CanonEnrichmentCommitResult>
+commitEnrichment(request: CanonEnrichmentCommitRequest, signal?: AbortSignal): Promise<CanonEnrichmentCommitResult>
 
 /**
  * Plan the next source chapters requiring structured enrichment review.
@@ -193,7 +209,7 @@ commitEnrichment( request: CanonEnrichmentCommitRequest, signal?: AbortSignal, )
  * @param signal - cancellation signal.
  * @returns deterministic enrichment work queue.
  */
-planEnrichment( request: CanonEnrichmentPlanRequest, signal?: AbortSignal, ): Promise<CanonEnrichmentPlan>
+planEnrichment(request: CanonEnrichmentPlanRequest, signal?: AbortSignal): Promise<CanonEnrichmentPlan>
 
 /**
  * Report persisted enrichment coverage over a chapter range.
@@ -201,7 +217,7 @@ planEnrichment( request: CanonEnrichmentPlanRequest, signal?: AbortSignal, ): Pr
  * @param signal - cancellation signal.
  * @returns aggregate coverage and effective checkpoints.
  */
-enrichmentProgress( request: CanonEnrichmentProgressRequest, signal?: AbortSignal, ): Promise<CanonEnrichmentProgress>
+enrichmentProgress(request: CanonEnrichmentProgressRequest, signal?: AbortSignal): Promise<CanonEnrichmentProgress>
 
 /**
  * Mark one chapter/record-family review complete after verified records have been admitted.
@@ -209,7 +225,7 @@ enrichmentProgress( request: CanonEnrichmentProgressRequest, signal?: AbortSigna
  * @param signal - cancellation signal.
  * @returns persisted coverage checkpoint.
  */
-checkpointEnrichment( request: CanonEnrichmentCheckpointRequest, signal?: AbortSignal, ): Promise<CanonEnrichmentCoverage>
+checkpointEnrichment(request: CanonEnrichmentCheckpointRequest, signal?: AbortSignal): Promise<CanonEnrichmentCoverage>
 
 /**
  * List persisted fanfic branches.
@@ -224,7 +240,7 @@ listBranches(signal?: AbortSignal): Promise<readonly FanficBranch[]>
  * @param signal - cancellation signal.
  * @returns created branch.
  */
-createBranch( request: CreateFanficBranchRequest, signal?: AbortSignal, ): Promise<FanficBranch>
+createBranch(request: CreateFanficBranchRequest, signal?: AbortSignal): Promise<FanficBranch>
 
 /**
  * Read the full administrative branch state.
@@ -240,7 +256,7 @@ getBranch(id: FanficBranchId, signal?: AbortSignal): Promise<FanficBranch>
  * @param signal - cancellation signal.
  * @returns updated branch.
  */
-recordDivergence( request: RecordFanficDivergenceRequest, signal?: AbortSignal, ): Promise<FanficBranch>
+recordDivergence(request: RecordFanficDivergenceRequest, signal?: AbortSignal): Promise<FanficBranch>
 
 /**
  * Replace branch author intent using CAS revision.
@@ -248,7 +264,7 @@ recordDivergence( request: RecordFanficDivergenceRequest, signal?: AbortSignal, 
  * @param signal - cancellation signal.
  * @returns updated branch.
  */
-updateIntent( request: UpdateFanficIntentRequest, signal?: AbortSignal, ): Promise<FanficBranch>
+updateIntent(request: UpdateFanficIntentRequest, signal?: AbortSignal): Promise<FanficBranch>
 
 /**
  * Replace durable long-form Story Director metadata using CAS revision.
@@ -256,7 +272,7 @@ updateIntent( request: UpdateFanficIntentRequest, signal?: AbortSignal, ): Promi
  * @param signal - cancellation signal.
  * @returns updated branch.
  */
-updateStoryDirector( request: UpdateFanficStoryDirectorRequest, signal?: AbortSignal, ): Promise<FanficBranch>
+updateStoryDirector(request: UpdateFanficStoryDirectorRequest, signal?: AbortSignal): Promise<FanficBranch>
 
 /**
  * Upsert one Story Director arc.
@@ -264,7 +280,7 @@ updateStoryDirector( request: UpdateFanficStoryDirectorRequest, signal?: AbortSi
  * @param signal - cancellation signal.
  * @returns updated branch.
  */
-upsertStoryArc( request: UpsertFanficStoryArcRequest, signal?: AbortSignal, ): Promise<FanficBranch>
+upsertStoryArc(request: UpsertFanficStoryArcRequest, signal?: AbortSignal): Promise<FanficBranch>
 
 /**
  * Upsert one Story Director thread.
@@ -272,7 +288,7 @@ upsertStoryArc( request: UpsertFanficStoryArcRequest, signal?: AbortSignal, ): P
  * @param signal - cancellation signal.
  * @returns updated branch.
  */
-upsertStoryThread( request: UpsertFanficStoryThreadRequest, signal?: AbortSignal, ): Promise<FanficBranch>
+upsertStoryThread(request: UpsertFanficStoryThreadRequest, signal?: AbortSignal): Promise<FanficBranch>
 
 /**
  * Upsert one Story Director foreshadow.
@@ -280,7 +296,7 @@ upsertStoryThread( request: UpsertFanficStoryThreadRequest, signal?: AbortSignal
  * @param signal - cancellation signal.
  * @returns updated branch.
  */
-upsertForeshadow( request: UpsertFanficForeshadowRequest, signal?: AbortSignal, ): Promise<FanficBranch>
+upsertForeshadow(request: UpsertFanficForeshadowRequest, signal?: AbortSignal): Promise<FanficBranch>
 
 /**
  * Replace the rolling Story Director horizon.
@@ -288,7 +304,7 @@ upsertForeshadow( request: UpsertFanficForeshadowRequest, signal?: AbortSignal, 
  * @param signal - cancellation signal.
  * @returns updated branch.
  */
-setStoryHorizon( request: SetFanficHorizonRequest, signal?: AbortSignal, ): Promise<FanficBranch>
+setStoryHorizon(request: SetFanficHorizonRequest, signal?: AbortSignal): Promise<FanficBranch>
 
 /**
  * Upsert one author-only mystery truth.
@@ -296,7 +312,7 @@ setStoryHorizon( request: SetFanficHorizonRequest, signal?: AbortSignal, ): Prom
  * @param signal - cancellation signal.
  * @returns updated branch.
  */
-upsertMysteryTruth( request: UpsertFanficMysteryTruthRequest, signal?: AbortSignal, ): Promise<FanficBranch>
+upsertMysteryTruth(request: UpsertFanficMysteryTruthRequest, signal?: AbortSignal): Promise<FanficBranch>
 
 /**
  * Upsert one fanfic-original invention record.
@@ -304,7 +320,7 @@ upsertMysteryTruth( request: UpsertFanficMysteryTruthRequest, signal?: AbortSign
  * @param signal - cancellation signal.
  * @returns updated branch.
  */
-upsertInvention( request: UpsertFanficInventionRequest, signal?: AbortSignal, ): Promise<FanficBranch>
+upsertInvention(request: UpsertFanficInventionRequest, signal?: AbortSignal): Promise<FanficBranch>
 
 /**
  * Resolve one open Story Director reconciliation issue after granular metadata has been updated.
@@ -312,7 +328,7 @@ upsertInvention( request: UpsertFanficInventionRequest, signal?: AbortSignal, ):
  * @param signal - cancellation signal.
  * @returns updated branch.
  */
-resolveDirectorReconciliation( request: { readonly branchId: FanficBranchId readonly expectedRevision: number readonly reconciliationId: string }, signal?: AbortSignal, ): Promise<FanficBranch>
+resolveDirectorReconciliation(request: { readonly branchId: FanficBranchId; readonly expectedRevision: number; readonly reconciliationId: string }, signal?: AbortSignal): Promise<FanficBranch>
 
 /**
  * Compose a bounded Story Director packet around one fanfic chapter.
@@ -320,7 +336,31 @@ resolveDirectorReconciliation( request: { readonly branchId: FanficBranchId read
  * @param signal - cancellation signal.
  * @returns active arcs, threads, foreshadows, horizon, and attention items.
  */
-storyDirectorContext( request: StoryDirectorContextRequest, signal?: AbortSignal, ): Promise<StoryDirectorContext>
+storyDirectorContext(request: StoryDirectorContextRequest, signal?: AbortSignal): Promise<StoryDirectorContext>
+
+/**
+ * Stage prose for exact-hash audit and commit operations.
+ * @param request - branch, chapter, and prose text.
+ * @param signal - cancellation signal.
+ * @returns staged draft metadata and text.
+ */
+stageDraft(request: StageFanficDraftRequest, signal?: AbortSignal): Promise<FanficDraft>
+
+/**
+ * Replace one staged draft while preserving its identity.
+ * @param request - draft revision and replacement prose.
+ * @param signal - cancellation signal.
+ * @returns updated staged draft.
+ */
+updateDraft(request: UpdateFanficDraftRequest, signal?: AbortSignal): Promise<FanficDraft>
+
+/**
+ * Read one staged draft.
+ * @param draftId - staged draft id.
+ * @param signal - cancellation signal.
+ * @returns staged draft.
+ */
+getDraft(draftId: string, signal?: AbortSignal): Promise<FanficDraft>
 
 /**
  * Append Observer/Reflector state using CAS revision.
@@ -328,7 +368,7 @@ storyDirectorContext( request: StoryDirectorContextRequest, signal?: AbortSignal
  * @param signal - cancellation signal.
  * @returns updated branch.
  */
-applyDelta( request: ApplyFanficDeltaRequest, signal?: AbortSignal, ): Promise<FanficBranch>
+applyDelta(request: ApplyFanficDeltaRequest, signal?: AbortSignal): Promise<FanficBranch>
 
 /**
  * Run deterministic canon and branch-state audit.
@@ -339,5 +379,5 @@ applyDelta( request: ApplyFanficDeltaRequest, signal?: AbortSignal, ): Promise<F
 audit(request: FanficAuditRequest, signal?: AbortSignal): Promise<FanficAuditResult>
 ```
 
-Source: [`packages/fanfic/fanfic/src/index.ts:91`](../../packages/fanfic/fanfic/src/index.ts)
+Source: [`packages/fanfic/fanfic/src/index.ts:95`](../../packages/fanfic/fanfic/src/index.ts)
 <!-- END GENERATED cordis-surface -->
