@@ -569,6 +569,235 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'fanfic',
+    summary: 'Fanfic runtime selecting one registered provider without binding consumers to storage.',
+    description: 'Fanfic runtime selecting one registered provider without binding consumers to storage.',
+    methods: [
+      {
+        signature: 'registerProvider(provider: FanficProvider): () => void',
+        description: 'Register one provider for this service lifetime.',
+        parameters: [{ name: 'provider', description: 'provider implementation to register.' }],
+        returns: 'disposer that unregisters this provider contribution.',
+      },
+      {
+        signature: 'status(signal?: AbortSignal): Promise<FanficStatus>',
+        description: 'Return active provider and canon-pack status.',
+        parameters: [{ name: 'signal', description: 'cancellation signal.' }],
+        returns: 'provider status.',
+      },
+      {
+        signature: 'search( request: CanonSearchRequest, signal?: AbortSignal, ): Promise<readonly CanonSearchHit[]>',
+        description: 'Search spoiler-safe source canon.',
+        parameters: [{ name: 'request', description: 'bounded search request.' }, { name: 'signal', description: 'cancellation signal.' }],
+        returns: 'matching source excerpts.',
+      },
+      {
+        signature: 'readChapter( request: CanonChapterReadRequest, signal?: AbortSignal, ): Promise<CanonChapter>',
+        description: 'Read one source chapter under a spoiler cutoff.',
+        parameters: [{ name: 'request', description: 'chapter read request.' }, { name: 'signal', description: 'cancellation signal.' }],
+        returns: 'source chapter.',
+      },
+      {
+        signature: 'snapshot(request: CanonSnapshotRequest, signal?: AbortSignal): Promise<CanonSnapshot>',
+        description: 'Compose canon state at one narrative point.',
+        parameters: [{ name: 'request', description: 'snapshot request.' }, { name: 'signal', description: 'cancellation signal.' }],
+        returns: 'spoiler-safe snapshot.',
+      },
+      {
+        signature: 'authorContext( request: AuthorContextRequest, signal?: AbortSignal, ): Promise<AuthorContext>',
+        description: 'Compose writer-facing canon and branch context.',
+        parameters: [{ name: 'request', description: 'scene context request.' }, { name: 'signal', description: 'cancellation signal.' }],
+        returns: 'author context packet.',
+      },
+      {
+        signature: 'traceCausality( request: CanonCausalityTraceRequest, signal?: AbortSignal, ): Promise<CanonCausalityTrace>',
+        description: 'Query source-backed causal links.',
+        parameters: [{ name: 'request', description: 'causal query.' }, { name: 'signal', description: 'cancellation signal.' }],
+        returns: 'bounded causal trace.',
+      },
+      {
+        signature: 'timelineContext( request: CanonTimelineContextRequest, signal?: AbortSignal, ): Promise<CanonTimelineContext>',
+        description: 'Query worldline/timeline rules, relevant events, and source evidence at one cutoff.',
+        parameters: [{ name: 'request', description: 'timeline/worldline query.' }, { name: 'signal', description: 'cancellation signal.' }],
+        returns: 'bounded timeline context.',
+      },
+      {
+        signature: 'expandContext( request: CanonContextExpansionRequest, signal?: AbortSignal, ): Promise<CanonContextExpansion>',
+        description: 'Expand explicit scene entities through spoiler-safe structured graph edges.',
+        parameters: [{ name: 'request', description: 'seed entities and cutoff.' }, { name: 'signal', description: 'cancellation signal.' }],
+        returns: 'discovered related entities with reasons.',
+      },
+      {
+        signature: 'characterIntelligence( request: CharacterIntelligenceRequest, signal?: AbortSignal, ): Promise<CharacterIntelligence>',
+        description: 'Build one source-backed character dossier at the requested cutoff.',
+        parameters: [{ name: 'request', description: 'character dossier request.' }, { name: 'signal', description: 'cancellation signal.' }],
+        returns: 'temporal state, epistemics, relationships, powers, evidence, and gaps.',
+      },
+      {
+        signature: 'characterVoiceContext( request: CharacterVoiceContextRequest, signal?: AbortSignal, ): Promise<CharacterVoiceContext>',
+        description: 'Return bounded source-backed dialogue/voice evidence for one character.',
+        parameters: [{ name: 'request', description: 'character, cutoff, and sample limit.' }, { name: 'signal', description: 'cancellation signal.' }],
+        returns: 'contextual source windows and structured voice notes.',
+      },
+      {
+        signature: 'narrativeStyleContext( request: NarrativeStyleContextRequest, signal?: AbortSignal, ): Promise<NarrativeStyleContext>',
+        description: 'Compose cutoff-safe work-level narrative rhythm and scene-mode evidence.',
+        parameters: [{ name: 'request', description: 'scene mode, cutoff, participants, and sample limit.' }, { name: 'signal', description: 'cancellation signal.' }],
+        returns: 'high-level narrative style context.',
+      },
+      {
+        signature: 'antiCopyGuard( request: AntiCopyGuardRequest, signal?: AbortSignal, ): Promise<AntiCopyGuardResult>',
+        description: 'Detect exact draft overlap against immutable source text without exposing future-source locations.',
+        parameters: [{ name: 'request', description: 'draft, cutoff, and overlap thresholds.' }, { name: 'signal', description: 'cancellation signal.' }],
+        returns: 'corpus-wide anti-copy findings.',
+      },
+      {
+        signature: 'auditNarrativeStyle( request: NarrativeStyleAuditRequest, signal?: AbortSignal, ): Promise<NarrativeStyleAuditResult>',
+        description: 'Audit high-level narrative drift and accidental source overlap.',
+        parameters: [{ name: 'request', description: 'draft plus style-context and anti-copy settings.' }, { name: 'signal', description: 'cancellation signal.' }],
+        returns: 'quantitative style and anti-copy findings.',
+      },
+      {
+        signature: 'assessPower( request: PowerAssessmentRequest, signal?: AbortSignal, ): Promise<PowerAssessment>',
+        description: 'Assess known power constraints without inventing a fight winner.',
+        parameters: [{ name: 'request', description: 'actors, scenario, and cutoff.' }, { name: 'signal', description: 'cancellation signal.' }],
+        returns: 'evidence-first capability assessment.',
+      },
+      {
+        signature: 'impactScan( request: FanficImpactScanRequest, signal?: AbortSignal, ): Promise<FanficImpactScan>',
+        description: 'Scan canon dependencies and branch threads affected by a proposed divergence.',
+        parameters: [{ name: 'request', description: 'proposed change, entities, and cutoff.' }, { name: 'signal', description: 'cancellation signal.' }],
+        returns: 'relevant dependencies and open branch threads.',
+      },
+      {
+        signature: 'validateEnrichment( candidate: CanonEnrichmentCandidate, signal?: AbortSignal, ): Promise<CanonEnrichmentValidation>',
+        description: 'Validate a structured enrichment candidate against immutable chapter evidence.',
+        parameters: [{ name: 'candidate', description: 'source-backed candidate to validate.' }, { name: 'signal', description: 'cancellation signal.' }],
+        returns: 'evidence result and token when valid.',
+      },
+      {
+        signature: 'commitEnrichment( request: CanonEnrichmentCommitRequest, signal?: AbortSignal, ): Promise<CanonEnrichmentCommitResult>',
+        description: 'Commit a token-bound verified enrichment record into the provider overlay.',
+        parameters: [{ name: 'request', description: 'candidate plus validation token.' }, { name: 'signal', description: 'cancellation signal.' }],
+        returns: 'committed record metadata.',
+      },
+      {
+        signature: 'planEnrichment( request: CanonEnrichmentPlanRequest, signal?: AbortSignal, ): Promise<CanonEnrichmentPlan>',
+        description: 'Plan the next source chapters requiring structured enrichment review.',
+        parameters: [{ name: 'request', description: 'chapter range, record families, and batch size.' }, { name: 'signal', description: 'cancellation signal.' }],
+        returns: 'deterministic enrichment work queue.',
+      },
+      {
+        signature: 'enrichmentProgress( request: CanonEnrichmentProgressRequest, signal?: AbortSignal, ): Promise<CanonEnrichmentProgress>',
+        description: 'Report persisted enrichment coverage over a chapter range.',
+        parameters: [{ name: 'request', description: 'chapter range and record families.' }, { name: 'signal', description: 'cancellation signal.' }],
+        returns: 'aggregate coverage and effective checkpoints.',
+      },
+      {
+        signature: 'checkpointEnrichment( request: CanonEnrichmentCheckpointRequest, signal?: AbortSignal, ): Promise<CanonEnrichmentCoverage>',
+        description: 'Mark one chapter/record-family review complete after verified records have been admitted.',
+        parameters: [{ name: 'request', description: 'reviewed chapter, family, admitted ids, and review notes.' }, { name: 'signal', description: 'cancellation signal.' }],
+        returns: 'persisted coverage checkpoint.',
+      },
+      {
+        signature: 'listBranches(signal?: AbortSignal): Promise<readonly FanficBranch[]>',
+        description: 'List persisted fanfic branches.',
+        parameters: [{ name: 'signal', description: 'cancellation signal.' }],
+        returns: 'branch snapshots.',
+      },
+      {
+        signature: 'createBranch( request: CreateFanficBranchRequest, signal?: AbortSignal, ): Promise<FanficBranch>',
+        description: 'Create one branch over immutable canon.',
+        parameters: [{ name: 'request', description: 'branch creation request.' }, { name: 'signal', description: 'cancellation signal.' }],
+        returns: 'created branch.',
+      },
+      {
+        signature: 'getBranch(id: FanficBranchId, signal?: AbortSignal): Promise<FanficBranch>',
+        description: 'Read the full administrative branch state.',
+        parameters: [{ name: 'id', description: 'branch id.' }, { name: 'signal', description: 'cancellation signal.' }],
+        returns: 'branch snapshot.',
+      },
+      {
+        signature: 'recordDivergence( request: RecordFanficDivergenceRequest, signal?: AbortSignal, ): Promise<FanficBranch>',
+        description: 'Record a canon divergence using CAS revision.',
+        parameters: [{ name: 'request', description: 'divergence write.' }, { name: 'signal', description: 'cancellation signal.' }],
+        returns: 'updated branch.',
+      },
+      {
+        signature: 'updateIntent( request: UpdateFanficIntentRequest, signal?: AbortSignal, ): Promise<FanficBranch>',
+        description: 'Replace branch author intent using CAS revision.',
+        parameters: [{ name: 'request', description: 'intent update.' }, { name: 'signal', description: 'cancellation signal.' }],
+        returns: 'updated branch.',
+      },
+      {
+        signature: 'updateStoryDirector( request: UpdateFanficStoryDirectorRequest, signal?: AbortSignal, ): Promise<FanficBranch>',
+        description: 'Replace durable long-form Story Director metadata using CAS revision.',
+        parameters: [{ name: 'request', description: 'complete director state and expected branch revision.' }, { name: 'signal', description: 'cancellation signal.' }],
+        returns: 'updated branch.',
+      },
+      {
+        signature: 'upsertStoryArc( request: UpsertFanficStoryArcRequest, signal?: AbortSignal, ): Promise<FanficBranch>',
+        description: 'Upsert one Story Director arc.',
+        parameters: [{ name: 'request', description: 'arc payload and expected branch revision.' }, { name: 'signal', description: 'cancellation signal.' }],
+        returns: 'updated branch.',
+      },
+      {
+        signature: 'upsertStoryThread( request: UpsertFanficStoryThreadRequest, signal?: AbortSignal, ): Promise<FanficBranch>',
+        description: 'Upsert one Story Director thread.',
+        parameters: [{ name: 'request', description: 'thread payload and expected branch revision.' }, { name: 'signal', description: 'cancellation signal.' }],
+        returns: 'updated branch.',
+      },
+      {
+        signature: 'upsertForeshadow( request: UpsertFanficForeshadowRequest, signal?: AbortSignal, ): Promise<FanficBranch>',
+        description: 'Upsert one Story Director foreshadow.',
+        parameters: [{ name: 'request', description: 'foreshadow payload and expected branch revision.' }, { name: 'signal', description: 'cancellation signal.' }],
+        returns: 'updated branch.',
+      },
+      {
+        signature: 'setStoryHorizon( request: SetFanficHorizonRequest, signal?: AbortSignal, ): Promise<FanficBranch>',
+        description: 'Replace the rolling Story Director horizon.',
+        parameters: [{ name: 'request', description: 'chapter plans and expected branch revision.' }, { name: 'signal', description: 'cancellation signal.' }],
+        returns: 'updated branch.',
+      },
+      {
+        signature: 'upsertMysteryTruth( request: UpsertFanficMysteryTruthRequest, signal?: AbortSignal, ): Promise<FanficBranch>',
+        description: 'Upsert one author-only mystery truth.',
+        parameters: [{ name: 'request', description: 'private mystery truth and expected branch revision.' }, { name: 'signal', description: 'cancellation signal.' }],
+        returns: 'updated branch.',
+      },
+      {
+        signature: 'upsertInvention( request: UpsertFanficInventionRequest, signal?: AbortSignal, ): Promise<FanficBranch>',
+        description: 'Upsert one fanfic-original invention record.',
+        parameters: [{ name: 'request', description: 'invention constraints and expected branch revision.' }, { name: 'signal', description: 'cancellation signal.' }],
+        returns: 'updated branch.',
+      },
+      {
+        signature: 'resolveDirectorReconciliation( request: { readonly branchId: FanficBranchId readonly expectedRevision: number readonly reconciliationId: string }, signal?: AbortSignal, ): Promise<FanficBranch>',
+        description: 'Resolve one open Story Director reconciliation issue after granular metadata has been updated.',
+        parameters: [{ name: 'request', description: 'branch revision and reconciliation id.' }, { name: 'signal', description: 'cancellation signal.' }],
+        returns: 'updated branch.',
+      },
+      {
+        signature: 'storyDirectorContext( request: StoryDirectorContextRequest, signal?: AbortSignal, ): Promise<StoryDirectorContext>',
+        description: 'Compose a bounded Story Director packet around one fanfic chapter.',
+        parameters: [{ name: 'request', description: 'branch, chapter, and rolling horizon size.' }, { name: 'signal', description: 'cancellation signal.' }],
+        returns: 'active arcs, threads, foreshadows, horizon, and attention items.',
+      },
+      {
+        signature: 'applyDelta( request: ApplyFanficDeltaRequest, signal?: AbortSignal, ): Promise<FanficBranch>',
+        description: 'Append Observer/Reflector state using CAS revision.',
+        parameters: [{ name: 'request', description: 'state delta.' }, { name: 'signal', description: 'cancellation signal.' }],
+        returns: 'updated branch.',
+      },
+      {
+        signature: 'audit(request: FanficAuditRequest, signal?: AbortSignal): Promise<FanficAuditResult>',
+        description: 'Run deterministic canon and branch-state audit.',
+        parameters: [{ name: 'request', description: 'draft audit request.' }, { name: 'signal', description: 'cancellation signal.' }],
+        returns: 'audit findings.',
+      },
+    ],
+  },
+  {
     key: 'fs',
     summary: 'Abstract filesystem provider.',
     description: 'Abstract filesystem provider. Targets must preserve identity across aliases; reads expose regular UTF-8 text or typed errors, listings are stable and content-free, and mutations are atomic. Optional guards add stale protection without changing the unguarded provider contract.',
@@ -2656,6 +2885,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type AgentStatus = \'idle\' | \'running\';',
   },
   {
+    name: 'AntiCopyFinding',
+    declaration: 'export interface AntiCopyFinding {\n    readonly draftExcerpt: string;\n    readonly overlapChars: number;\n    readonly sourceChapter?: number;\n    readonly beyondCutoff: boolean;\n    readonly sourceFingerprint: string;\n}',
+  },
+  {
+    name: 'AntiCopyGuardRequest',
+    declaration: 'export interface AntiCopyGuardRequest {\n    readonly draft: string;\n    readonly asOfChapter: number;\n    readonly branchId?: FanficBranchId;\n    readonly fanficChapter?: number;\n    readonly minPhraseChars: number;\n    readonly maxFindings: number;\n}',
+  },
+  {
+    name: 'AntiCopyGuardResult',
+    declaration: 'export interface AntiCopyGuardResult {\n    readonly ok: boolean;\n    readonly auditReceipt?: FanficAuditReceipt;\n    readonly checkedDraftChars: number;\n    readonly minPhraseChars: number;\n    readonly findings: readonly AntiCopyFinding[];\n    readonly cautions: readonly string[];\n}',
+  },
+  {
+    name: 'ApplyFanficDeltaRequest',
+    declaration: 'export interface ApplyFanficDeltaRequest {\n    readonly branchId: FanficBranchId;\n    readonly expectedRevision: number;\n    readonly delta: FanficStateDelta;\n    readonly rewriteMode?: FanficRewriteMode;\n    readonly dropInheritedRecordIds?: readonly string[];\n    readonly confirmDroppedState?: boolean;\n    readonly draft: string;\n    readonly auditReceiptIds: readonly string[];\n}',
+  },
+  {
     name: 'ApprovalOutcome',
     declaration: 'export type ApprovalOutcome = \'allowed-once\' | \'rejected\' | \'cancelled\' | \'unavailable\';',
   },
@@ -2720,6 +2965,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type AttachmentId = Branded<\'AttachmentId\'>;',
   },
   {
+    name: 'AuthorContext',
+    declaration: 'export interface AuthorContext {\n    readonly version: 3;\n    readonly scene: {\n        readonly canonPoint: CanonPoint;\n        readonly fanficChapter?: number;\n        readonly pov: string;\n        readonly participants: readonly string[];\n        readonly goal: string;\n    };\n    readonly canonTruth: CanonSnapshot;\n    readonly canonSameChapterTruth?: CanonSnapshot;\n    readonly canonReference?: CanonSnapshot;\n    readonly contextExpansion: CanonContextExpansion;\n    readonly characterIntelligence: readonly CharacterIntelligence[];\n    readonly narrativeStyle: NarrativeStyleContext;\n    readonly storyDirector?: StoryDirectorContext;\n    readonly branch?: FanficBranch;\n    readonly divergencePolicy: {\n        readonly diverged: boolean;\n        readonly canonStableThroughChapter: number;\n        readonly sameChapterTruthThroughEventOrdinal?: number;\n        readonly laterCanonIsCounterfactualReference: boolean;\n    };\n    readonly hardConstraints: readonly string[];\n    readonly workflow: readonly string[];\n}',
+  },
+  {
+    name: 'AuthorContextRequest',
+    declaration: 'export interface AuthorContextRequest {\n    readonly asOfChapter: number;\n    readonly povCharacter: string;\n    readonly participants: readonly string[];\n    readonly sceneGoal: string;\n    readonly query: string;\n    readonly branchId?: FanficBranchId;\n    readonly fanficChapter?: number;\n    readonly storyHorizonSize: number;\n    readonly styleMode: NarrativeStyleMode;\n    readonly styleSampleLimit: number;\n}',
+  },
+  {
     name: 'BackendRegistry',
     declaration: 'export class BackendRegistry {\n    register(name: string, backend: StorageBackend): () => void;\n    get(name: string): StorageBackend;\n    names(): string[];\n}',
   },
@@ -2742,6 +2995,174 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'CancelOptions',
     declaration: 'export interface CancelOptions {\n    keepInbox?: boolean | undefined;\n}',
+  },
+  {
+    name: 'CanonCausalityTrace',
+    declaration: 'export interface CanonCausalityTrace {\n    readonly asOfChapter: number;\n    readonly query: string;\n    readonly links: readonly CanonCausalLink[];\n}',
+  },
+  {
+    name: 'CanonCausalityTraceRequest',
+    declaration: 'export interface CanonCausalityTraceRequest {\n    readonly query: string;\n    readonly asOfChapter: number;\n    readonly limit: number;\n}',
+  },
+  {
+    name: 'CanonCausalLink',
+    declaration: 'export interface CanonCausalLink {\n    readonly id: string;\n    readonly introducedByChapter: number;\n    readonly cause: string;\n    readonly effect: string;\n    readonly mechanism?: string;\n    readonly confidence?: number;\n    readonly provenance?: CanonProvenance;\n}',
+  },
+  {
+    name: 'CanonChapter',
+    declaration: 'export interface CanonChapter {\n    readonly index: number;\n    readonly title: string;\n    readonly part?: string | null;\n    readonly href: string;\n    readonly sha256: string;\n    readonly text: string;\n}',
+  },
+  {
+    name: 'CanonChapterReadRequest',
+    declaration: 'export interface CanonChapterReadRequest {\n    readonly chapter: number;\n    readonly asOfChapter: number;\n}',
+  },
+  {
+    name: 'CanonCharacterState',
+    declaration: 'export interface CanonCharacterState {\n    readonly id: string;\n    readonly name: string;\n    readonly aliases?: readonly string[];\n    readonly validFromChapter: number;\n    readonly validUntilChapter?: number;\n    readonly realm?: string;\n    readonly location?: string;\n    readonly affiliations?: readonly string[];\n    readonly goals?: readonly string[];\n    readonly traits?: readonly string[];\n    readonly ideology?: readonly string[];\n    readonly values?: readonly string[];\n    readonly fears?: readonly string[];\n    readonly redLines?: readonly string[];\n    readonly decisionRules?: readonly string[];\n    readonly voiceNotes?: readonly string[];\n    readonly emotionalState?: readonly string[];\n    readonly techniques?: readonly string[];\n    readonly possessions?: readonly string[];\n    readonly injuries?: readonly string[];\n    readonly provenance?: CanonProvenance;\n}',
+  },
+  {
+    name: 'CanonContextExpansion',
+    declaration: 'export interface CanonContextExpansion {\n    readonly asOfChapter: number;\n    readonly seeds: readonly string[];\n    readonly discovered: readonly CanonDiscoveredEntity[];\n}',
+  },
+  {
+    name: 'CanonContextExpansionRequest',
+    declaration: 'export interface CanonContextExpansionRequest {\n    readonly asOfChapter: number;\n    readonly seeds: readonly string[];\n    readonly query?: string;\n    readonly maxEntities: number;\n}',
+  },
+  {
+    name: 'CanonDiscoveredEntity',
+    declaration: 'export interface CanonDiscoveredEntity {\n    readonly entity: string;\n    readonly score: number;\n    readonly reasons: readonly string[];\n}',
+  },
+  {
+    name: 'CanonEnrichmentCandidate',
+    declaration: 'export interface CanonEnrichmentCandidate {\n    readonly kind: CanonEnrichmentKind;\n    readonly chapter: number;\n    readonly evidence: string;\n    readonly payload: Readonly<Record<string, FanficJsonValue>>;\n    readonly rationale?: string;\n}',
+  },
+  {
+    name: 'CanonEnrichmentCheckpointRequest',
+    declaration: 'export interface CanonEnrichmentCheckpointRequest {\n    readonly chapter: number;\n    readonly kind: CanonEnrichmentKind;\n    readonly recordIds: readonly string[];\n    readonly noFindings: boolean;\n    readonly notes: string;\n}',
+  },
+  {
+    name: 'CanonEnrichmentCommitRequest',
+    declaration: 'export interface CanonEnrichmentCommitRequest {\n    readonly candidate: CanonEnrichmentCandidate;\n    readonly token: string;\n}',
+  },
+  {
+    name: 'CanonEnrichmentCommitResult',
+    declaration: 'export interface CanonEnrichmentCommitResult {\n    readonly accepted: true;\n    readonly kind: CanonEnrichmentKind;\n    readonly id: string;\n    readonly provenance: CanonProvenance;\n    readonly overlayPath: string;\n}',
+  },
+  {
+    name: 'CanonEnrichmentCoverage',
+    declaration: 'export interface CanonEnrichmentCoverage {\n    readonly chapter: number;\n    readonly kind: CanonEnrichmentKind;\n    readonly sourceSha256: string;\n    readonly chapterSha256: string;\n    readonly recordIds: readonly string[];\n    readonly noFindings: boolean;\n    readonly notes: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'CanonEnrichmentKind',
+    declaration: 'export type CanonEnrichmentKind = \'fact\' | \'knowledge\' | \'character\' | \'identity\' | \'power\' | \'relationship\' | \'mystery\' | \'event\' | \'timeline-rule\' | \'causal-link\';',
+  },
+  {
+    name: 'CanonEnrichmentPlan',
+    declaration: 'export interface CanonEnrichmentPlan {\n    readonly fromChapter: number;\n    readonly toChapter: number;\n    readonly kinds: readonly CanonEnrichmentKind[];\n    readonly work: readonly CanonEnrichmentWorkItem[];\n    readonly remainingUnits: number;\n    readonly instructions: readonly string[];\n}',
+  },
+  {
+    name: 'CanonEnrichmentPlanRequest',
+    declaration: 'export interface CanonEnrichmentPlanRequest {\n    readonly fromChapter: number;\n    readonly toChapter: number;\n    readonly kinds: readonly CanonEnrichmentKind[];\n    readonly batchSize: number;\n}',
+  },
+  {
+    name: 'CanonEnrichmentProgress',
+    declaration: 'export interface CanonEnrichmentProgress {\n    readonly fromChapter: number;\n    readonly toChapter: number;\n    readonly kinds: readonly CanonEnrichmentKind[];\n    readonly totalUnits: number;\n    readonly completedUnits: number;\n    readonly completionRatio: number;\n    readonly byKind: Readonly<Record<string, {\n        readonly completed: number;\n        readonly total: number;\n    }>>;\n    readonly checkpoints: readonly CanonEnrichmentCoverage[];\n}',
+  },
+  {
+    name: 'CanonEnrichmentProgressRequest',
+    declaration: 'export interface CanonEnrichmentProgressRequest {\n    readonly fromChapter: number;\n    readonly toChapter: number;\n    readonly kinds: readonly CanonEnrichmentKind[];\n}',
+  },
+  {
+    name: 'CanonEnrichmentValidation',
+    declaration: 'export interface CanonEnrichmentValidation {\n    readonly valid: boolean;\n    readonly token?: string;\n    readonly chapter: number;\n    readonly chapterTitle?: string;\n    readonly chapterSha256?: string;\n    readonly normalizedEvidence?: string;\n    readonly errors: readonly string[];\n    readonly warnings: readonly string[];\n}',
+  },
+  {
+    name: 'CanonEnrichmentWorkItem',
+    declaration: 'export interface CanonEnrichmentWorkItem {\n    readonly chapter: number;\n    readonly title: string;\n    readonly chapterSha256: string;\n    readonly pendingKinds: readonly CanonEnrichmentKind[];\n    readonly existingRecordIds: Readonly<Record<string, readonly string[]>>;\n}',
+  },
+  {
+    name: 'CanonEvent',
+    declaration: 'export interface CanonEvent {\n    readonly id: string;\n    readonly chapter: number;\n    readonly orderInChapter?: number;\n    readonly summary: string;\n    readonly participants?: readonly string[];\n    readonly dependencies?: readonly string[];\n    readonly consequences?: readonly string[];\n    readonly provenance?: CanonProvenance;\n}',
+  },
+  {
+    name: 'CanonFact',
+    declaration: 'export interface CanonFact {\n    readonly id: string;\n    readonly subject: string;\n    readonly predicate: string;\n    readonly object: FanficJsonValue;\n    readonly validFromChapter: number;\n    readonly validUntilChapter?: number;\n    readonly revealFromChapter?: number;\n    readonly aliases?: readonly string[];\n    readonly confidence?: number;\n    readonly provenance: CanonProvenance;\n}',
+  },
+  {
+    name: 'CanonIdentityEdge',
+    declaration: 'export interface CanonIdentityEdge {\n    readonly id: string;\n    readonly subject: string;\n    readonly relation: string;\n    readonly object: string;\n    readonly validFromChapter: number;\n    readonly validUntilChapter?: number;\n    readonly revealFromChapter?: number;\n    readonly provenance: CanonProvenance;\n}',
+  },
+  {
+    name: 'CanonKnowledge',
+    declaration: 'export interface CanonKnowledge {\n    readonly id: string;\n    readonly character: string;\n    readonly factId: string;\n    readonly stance: \'knows\' | \'suspects\' | \'believes-false\';\n    readonly knownFromChapter: number;\n    readonly knownUntilChapter?: number;\n    readonly provenance?: CanonProvenance;\n}',
+  },
+  {
+    name: 'CanonMystery',
+    declaration: 'export interface CanonMystery {\n    readonly id: string;\n    readonly label: string;\n    readonly revealChapter: number;\n    readonly forbiddenBeforeReveal?: readonly string[];\n    readonly clues?: readonly {\n        readonly chapter: number;\n        readonly summary: string;\n    }[];\n    readonly provenance?: CanonProvenance;\n}',
+  },
+  {
+    name: 'CanonPoint',
+    declaration: 'export interface CanonPoint {\n    readonly chapter: number;\n    readonly eventOrdinal?: number;\n    readonly afterEventId?: string;\n    readonly sceneId?: string;\n}',
+  },
+  {
+    name: 'CanonPowerState',
+    declaration: 'export interface CanonPowerState {\n    readonly id: string;\n    readonly subject: string;\n    readonly validFromChapter: number;\n    readonly validUntilChapter?: number;\n    readonly realm?: string;\n    readonly capabilities?: readonly string[];\n    readonly techniques?: readonly string[];\n    readonly artifacts?: readonly string[];\n    readonly demonstratedFeats?: readonly string[];\n    readonly prerequisites?: readonly string[];\n    readonly constraints?: readonly string[];\n    readonly exceptions?: readonly string[];\n    readonly provenance?: CanonProvenance;\n}',
+  },
+  {
+    name: 'CanonProvenance',
+    declaration: 'export interface CanonProvenance {\n    readonly sourceSha256: string;\n    readonly chapter: number;\n    readonly eventId?: string;\n    readonly eventOrdinal?: number;\n    readonly sceneId?: string;\n    readonly chapterSha256?: string;\n    readonly href?: string;\n    readonly excerpt?: string;\n}',
+  },
+  {
+    name: 'CanonRelationshipState',
+    declaration: 'export interface CanonRelationshipState {\n    readonly id: string;\n    readonly subject: string;\n    readonly object: string;\n    readonly validFromChapter: number;\n    readonly validUntilChapter?: number;\n    readonly relation?: string;\n    readonly publicState?: string;\n    readonly privateState?: string;\n    readonly provenance?: CanonProvenance;\n}',
+  },
+  {
+    name: 'CanonSearchHit',
+    declaration: 'export interface CanonSearchHit {\n    readonly chapter: number;\n    readonly title: string;\n    readonly score: number;\n    readonly excerpt: string;\n    readonly provenance: CanonProvenance;\n}',
+  },
+  {
+    name: 'CanonSearchRequest',
+    declaration: 'export interface CanonSearchRequest {\n    readonly query: string;\n    readonly asOfChapter: number;\n    readonly limit: number;\n}',
+  },
+  {
+    name: 'CanonSnapshot',
+    declaration: 'export interface CanonSnapshot {\n    readonly asOfChapter: number;\n    readonly spoilerFirewall: {\n        readonly maxNarrativeChapter: number;\n        readonly futureCanonBlocked: true;\n    };\n    readonly povCharacter?: string;\n    readonly characterStates: readonly CanonCharacterState[];\n    readonly facts: readonly CanonFact[];\n    readonly povKnowledge: readonly CanonKnowledge[];\n    readonly identities: readonly CanonIdentityEdge[];\n    readonly powers: readonly CanonPowerState[];\n    readonly relationships: readonly CanonRelationshipState[];\n    readonly mysteries: readonly CanonMystery[];\n    readonly events: readonly CanonEvent[];\n    readonly timelineRules: readonly CanonTimelineRule[];\n    readonly causalLinks: readonly CanonCausalLink[];\n    readonly sourceExcerpts: readonly CanonSearchHit[];\n}',
+  },
+  {
+    name: 'CanonSnapshotRequest',
+    declaration: 'export interface CanonSnapshotRequest {\n    readonly asOfChapter: number;\n    readonly povCharacter?: string;\n    readonly entities?: readonly string[];\n    readonly query?: string;\n    readonly searchLimit: number;\n}',
+  },
+  {
+    name: 'CanonTimelineContext',
+    declaration: 'export interface CanonTimelineContext {\n    readonly asOfChapter: number;\n    readonly worldline?: string;\n    readonly rules: readonly CanonTimelineRule[];\n    readonly events: readonly CanonEvent[];\n    readonly identities: readonly CanonIdentityEdge[];\n    readonly sourceEvidence: readonly CanonSearchHit[];\n    readonly cautions: readonly string[];\n}',
+  },
+  {
+    name: 'CanonTimelineContextRequest',
+    declaration: 'export interface CanonTimelineContextRequest {\n    readonly asOfChapter: number;\n    readonly worldline?: string;\n    readonly query?: string;\n    readonly entities?: readonly string[];\n    readonly limit: number;\n}',
+  },
+  {
+    name: 'CanonTimelineRule',
+    declaration: 'export interface CanonTimelineRule {\n    readonly id: string;\n    readonly validFromChapter: number;\n    readonly validUntilChapter?: number;\n    readonly worldline?: string;\n    readonly rule: string;\n    readonly effects?: readonly string[];\n    readonly provenance?: CanonProvenance;\n}',
+  },
+  {
+    name: 'CharacterIntelligence',
+    declaration: 'export interface CharacterIntelligence {\n    readonly character: string;\n    readonly asOfChapter: number;\n    readonly states: readonly CanonCharacterState[];\n    readonly identities: readonly CanonIdentityEdge[];\n    readonly powers: readonly CanonPowerState[];\n    readonly relationships: readonly CanonRelationshipState[];\n    readonly knowledge: readonly CanonKnowledge[];\n    readonly facts: readonly CanonFact[];\n    readonly branchState?: {\n        readonly characterStates: readonly FanficOverlayCharacterState[];\n        readonly relationships: readonly FanficOverlayRelationship[];\n        readonly knowledge: readonly FanficOverlayKnowledge[];\n    };\n    readonly sourceEvidence: readonly CanonSearchHit[];\n    readonly gaps: readonly string[];\n}',
+  },
+  {
+    name: 'CharacterIntelligenceRequest',
+    declaration: 'export interface CharacterIntelligenceRequest {\n    readonly character: string;\n    readonly asOfChapter: number;\n    readonly povCharacter?: string;\n    readonly branchId?: FanficBranchId;\n    readonly fanficChapter?: number;\n    readonly evidenceLimit: number;\n}',
+  },
+  {
+    name: 'CharacterVoiceContext',
+    declaration: 'export interface CharacterVoiceContext {\n    readonly character: string;\n    readonly asOfChapter: number;\n    readonly structuredVoiceNotes: readonly string[];\n    readonly samples: readonly CharacterVoiceSample[];\n    readonly cautions: readonly string[];\n}',
+  },
+  {
+    name: 'CharacterVoiceContextRequest',
+    declaration: 'export interface CharacterVoiceContextRequest {\n    readonly character: string;\n    readonly asOfChapter: number;\n    readonly limit: number;\n}',
+  },
+  {
+    name: 'CharacterVoiceSample',
+    declaration: 'export interface CharacterVoiceSample {\n    readonly chapter: number;\n    readonly title: string;\n    readonly excerpt: string;\n    readonly dialogueFragments: readonly string[];\n    readonly provenance: CanonProvenance;\n}',
   },
   {
     name: 'ClientResponse',
@@ -2908,6 +3329,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface CreateAgentOptions {\n    readonly sessionId: SessionId;\n    readonly meta?: {\n        readonly cwd?: string;\n        readonly parentSession?: SessionId;\n        readonly seedLength?: number;\n        readonly origin?: \'subagent\';\n        readonly delegationDepth?: number;\n        readonly agentPreset?: string;\n    };\n    readonly seed?: readonly SessionEvent[];\n    readonly agentOptions?: AgentOptions;\n    readonly signal?: AbortSignal;\n    readonly setup?: AgentSetup;\n}',
   },
   {
+    name: 'CreateFanficBranchRequest',
+    declaration: 'export interface CreateFanficBranchRequest {\n    readonly name: string;\n    readonly baseChapter: number;\n    readonly notes: string;\n    readonly authorIntent?: Partial<FanficAuthorIntent>;\n}',
+  },
+  {
     name: 'CreateGoalRequest',
     declaration: 'export interface CreateGoalRequest {\n    readonly objective: string;\n    readonly maxGoalRounds?: number;\n}',
   },
@@ -3034,6 +3459,134 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'EpochHeader',
     declaration: 'export interface EpochHeader {\n    config: LlmCallConfig;\n    adapterDefaults?: LlmCallConfigAdapterDefaults;\n    system?: string;\n    tools?: ToolSchema[];\n}',
+  },
+  {
+    name: 'FanficAuditClaim',
+    declaration: 'export interface FanficAuditClaim {\n    readonly kind: \'knowledge\' | \'canon-fact\' | \'identity\' | \'power\';\n    readonly subject: string;\n    readonly predicate?: string;\n    readonly object?: string;\n}',
+  },
+  {
+    name: 'FanficAuditCoverage',
+    declaration: 'export interface FanficAuditCoverage {\n    readonly extractedClaims: readonly FanficAuditClaim[];\n    readonly submittedClaims: readonly FanficAuditClaim[];\n    readonly uncoveredRiskyClaims: readonly FanficAuditClaim[];\n    readonly coveredCount: number;\n    readonly extractedCount: number;\n}',
+  },
+  {
+    name: 'FanficAuditIssue',
+    declaration: 'export interface FanficAuditIssue {\n    readonly severity: \'error\' | \'warning\';\n    readonly code: string;\n    readonly message: string;\n    readonly claim?: FanficAuditClaim;\n}',
+  },
+  {
+    name: 'FanficAuditReceipt',
+    declaration: 'export interface FanficAuditReceipt {\n    readonly id: string;\n    readonly kind: \'canon\' | \'style\' | \'anti-copy\';\n    readonly draftHash: string;\n    readonly branchId: FanficBranchId;\n    readonly fanficChapter: number;\n    readonly branchRevision: number;\n    readonly ok: boolean;\n    readonly issuedAt: string;\n}',
+  },
+  {
+    name: 'FanficAuditRequest',
+    declaration: 'export interface FanficAuditRequest {\n    readonly draft: string;\n    readonly asOfChapter: number;\n    readonly povCharacter: string;\n    readonly branchId?: FanficBranchId;\n    readonly fanficChapter?: number;\n    readonly claims: readonly FanficAuditClaim[];\n    readonly participants?: readonly string[];\n}',
+  },
+  {
+    name: 'FanficAuditResult',
+    declaration: 'export interface FanficAuditResult {\n    readonly ok: boolean;\n    readonly auditReceipt?: FanficAuditReceipt;\n    readonly issues: readonly FanficAuditIssue[];\n    readonly coverage: FanficAuditCoverage;\n    readonly limitations: readonly string[];\n}',
+  },
+  {
+    name: 'FanficAuthorIntent',
+    declaration: 'export interface FanficAuthorIntent {\n    readonly premise: string;\n    readonly divergenceMode: \'canon-compliant\' | \'soft-divergence\' | \'hard-au\';\n    readonly themes: readonly string[];\n    readonly tone: readonly string[];\n    readonly povPolicy: readonly string[];\n    readonly characterPriorities: readonly string[];\n    readonly forbiddenOutcomes: readonly string[];\n    readonly styleNotes: readonly string[];\n}',
+  },
+  {
+    name: 'FanficBranch',
+    declaration: 'export interface FanficBranch {\n    readonly version: 2;\n    readonly id: FanficBranchId;\n    readonly name: string;\n    readonly baseChapter: number;\n    readonly revision: number;\n    readonly notes: string;\n    readonly authorIntent: FanficAuthorIntent;\n    readonly storyDirector: FanficStoryDirectorState;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly divergences: readonly FanficDivergence[];\n    readonly chapterVersions: readonly FanficChapterVersion[];\n    readonly facts: readonly FanficOverlayFact[];\n    readonly knowledge: readonly FanficOverlayKnowledge[];\n    readonly characterStates: readonly FanficOverlayCharacterState[];\n    readonly relationships: readonly FanficOverlayRelationship[];\n    readonly causalThreads: readonly FanficCausalThread[];\n    readonly chapterSummaries: readonly FanficChapterSummary[];\n}',
+  },
+  {
+    name: 'FanficBranchId',
+    declaration: 'export type FanficBranchId = Branded<\'FanficBranchId\'>;',
+  },
+  {
+    name: 'FanficCausalThread',
+    declaration: 'export interface FanficCausalThread {\n    readonly id: string;\n    readonly originFanficChapter: number;\n    readonly originChapterVersionId: string;\n    readonly fromFanficChapter: number;\n    readonly summary: string;\n    readonly status: \'open\' | \'resolved\';\n    readonly recordedAt: string;\n    readonly resolvedAt?: string;\n}',
+  },
+  {
+    name: 'FanficChapterPlan',
+    declaration: 'export interface FanficChapterPlan {\n    readonly fanficChapter: number;\n    readonly status: \'planned\' | \'drafted\' | \'accepted\';\n    readonly goal: string;\n    readonly pov: string;\n    readonly beats: readonly string[];\n    readonly advanceThreads: readonly string[];\n    readonly plantForeshadows: readonly string[];\n    readonly payoffForeshadows: readonly string[];\n    readonly constraints: readonly string[];\n}',
+  },
+  {
+    name: 'FanficChapterSummary',
+    declaration: 'export interface FanficChapterSummary {\n    readonly fanficChapter: number;\n    readonly chapterVersionId: string;\n    readonly summary: string;\n    readonly recordedAt: string;\n}',
+  },
+  {
+    name: 'FanficChapterVersion',
+    declaration: 'export interface FanficChapterVersion {\n    readonly id: string;\n    readonly fanficChapter: number;\n    readonly status: \'active\' | \'superseded\';\n    readonly rewriteMode: \'initial\' | FanficRewriteMode;\n    readonly replacesVersionId?: string;\n    readonly resolvedCausalThreadIds: readonly string[];\n    readonly createdAt: string;\n    readonly supersededAt?: string;\n}',
+  },
+  {
+    name: 'FanficDirectorReconciliation',
+    declaration: 'export interface FanficDirectorReconciliation {\n    readonly id: string;\n    readonly fanficChapter: number;\n    readonly chapterVersionId: string;\n    readonly reason: \'rewrite\' | \'accepted-chapter\';\n    readonly status: \'open\' | \'resolved\';\n    readonly message: string;\n    readonly createdAt: string;\n    readonly resolvedAt?: string;\n}',
+  },
+  {
+    name: 'FanficDivergence',
+    declaration: 'export interface FanficDivergence {\n    readonly id: string;\n    readonly atChapter: number;\n    readonly eventOrdinal?: number;\n    readonly afterEventId?: string;\n    readonly sceneId?: string;\n    readonly summary: string;\n    readonly immediateConsequences: readonly string[];\n    readonly openQuestions: readonly string[];\n    readonly recordedAt: string;\n}',
+  },
+  {
+    name: 'FanficForeshadow',
+    declaration: 'export interface FanficForeshadow {\n    readonly id: string;\n    readonly status: \'planned\' | \'planted\' | \'paid-off\' | \'retired\';\n    readonly clue: string;\n    readonly payoff: string;\n    readonly relatedThreads: readonly string[];\n    readonly plantedFanficChapter?: number;\n    readonly targetFanficChapter?: number;\n    readonly payoffFanficChapter?: number;\n    readonly subtlety: \'background\' | \'noticeable\' | \'explicit\';\n}',
+  },
+  {
+    name: 'FanficImpactScan',
+    declaration: 'export interface FanficImpactScan {\n    readonly asOfChapter: number;\n    readonly summary: string;\n    readonly relatedCanonLinks: readonly CanonCausalLink[];\n    readonly relatedEvents: readonly CanonEvent[];\n    readonly discoveredEntities: readonly CanonDiscoveredEntity[];\n    readonly openBranchThreads: readonly FanficCausalThread[];\n    readonly limitations: readonly string[];\n}',
+  },
+  {
+    name: 'FanficImpactScanRequest',
+    declaration: 'export interface FanficImpactScanRequest {\n    readonly asOfChapter: number;\n    readonly summary: string;\n    readonly entities: readonly string[];\n    readonly branchId?: FanficBranchId;\n    readonly fanficChapter?: number;\n    readonly limit: number;\n}',
+  },
+  {
+    name: 'FanficInvention',
+    declaration: 'export interface FanficInvention {\n    readonly id: string;\n    readonly kind: \'artifact\' | \'technique\' | \'organization\' | \'mechanism\' | \'character\' | \'location\' | \'other\';\n    readonly name: string;\n    readonly originFanficChapter: number;\n    readonly summary: string;\n    readonly capabilities: readonly string[];\n    readonly constraints: readonly string[];\n    readonly costs: readonly string[];\n    readonly powerSource: string;\n    readonly owner?: string;\n    readonly canonCompatibility: readonly string[];\n    readonly relatedThreads: readonly string[];\n}',
+  },
+  {
+    name: 'FanficJsonValue',
+    declaration: 'export type FanficJsonValue = null | boolean | number | string | FanficJsonValue[] | {\n    readonly [key: string]: FanficJsonValue;\n};',
+  },
+  {
+    name: 'FanficMysteryTruth',
+    declaration: 'export interface FanficMysteryTruth {\n    readonly id: string;\n    readonly status: \'planned\' | \'active\' | \'revealed\' | \'retired\';\n    readonly label: string;\n    readonly secretTruth: string;\n    readonly mechanism: string;\n    readonly allowedClues: readonly string[];\n    readonly falseLeads: readonly string[];\n    readonly revealConditions: readonly string[];\n    readonly plannedPayoff: string;\n    readonly relatedThreads: readonly string[];\n}',
+  },
+  {
+    name: 'FanficOverlayCharacterState',
+    declaration: 'export interface FanficOverlayCharacterState {\n    readonly id: string;\n    readonly originFanficChapter: number;\n    readonly originChapterVersionId: string;\n    readonly character: string;\n    readonly fromFanficChapter: number;\n    readonly summary: string;\n    readonly recordedAt: string;\n}',
+  },
+  {
+    name: 'FanficOverlayFact',
+    declaration: 'export interface FanficOverlayFact {\n    readonly id: string;\n    readonly originFanficChapter: number;\n    readonly originChapterVersionId: string;\n    readonly subject: string;\n    readonly predicate: string;\n    readonly object: FanficJsonValue;\n    readonly validFromFanficChapter: number;\n    readonly validUntilFanficChapter?: number;\n    readonly recordedAt: string;\n}',
+  },
+  {
+    name: 'FanficOverlayKnowledge',
+    declaration: 'export interface FanficOverlayKnowledge {\n    readonly id: string;\n    readonly originFanficChapter: number;\n    readonly originChapterVersionId: string;\n    readonly character: string;\n    readonly subject?: string;\n    readonly predicate?: string;\n    readonly object?: string;\n    readonly summary: string;\n    readonly stance: \'knows\' | \'suspects\' | \'believes-false\';\n    readonly fromFanficChapter: number;\n    readonly recordedAt: string;\n}',
+  },
+  {
+    name: 'FanficOverlayRelationship',
+    declaration: 'export interface FanficOverlayRelationship {\n    readonly id: string;\n    readonly originFanficChapter: number;\n    readonly originChapterVersionId: string;\n    readonly subject: string;\n    readonly object: string;\n    readonly fromFanficChapter: number;\n    readonly summary: string;\n    readonly recordedAt: string;\n}',
+  },
+  {
+    name: 'FanficProvider',
+    declaration: 'export interface FanficProvider {\n    readonly id: string;\n    available(): boolean;\n    status(signal?: AbortSignal): Promise<FanficStatus>;\n    search(request: CanonSearchRequest, signal?: AbortSignal): Promise<readonly CanonSearchHit[]>;\n    readChapter(request: CanonChapterReadRequest, signal?: AbortSignal): Promise<CanonChapter>;\n    snapshot(request: CanonSnapshotRequest, signal?: AbortSignal): Promise<CanonSnapshot>;\n    authorContext(request: AuthorContextRequest, signal?: AbortSignal): Promise<AuthorContext>;\n    traceCausality(request: CanonCausalityTraceRequest, signal?: AbortSignal): Promise<CanonCausalityTrace>;\n    timelineContext(request: CanonTimelineContextRequest, signal?: AbortSignal): Promise<CanonTimelineContext>;\n    expandContext(request: CanonContextExpansionRequest, signal?: AbortSignal): Promise<CanonContextExpansion>;\n    characterIntelligence(request: CharacterIntelligenceRequest, signal?: AbortSignal): Promise<CharacterIntelligence>;\n    characterVoiceContext(request: CharacterVoiceContextRequest, signal?: AbortSignal): Promise<CharacterVoiceContext>;\n    narrativeStyleContext(request: NarrativeStyleContextRequest, signal?: AbortSignal): Promise<NarrativeStyleContext>;\n    antiCopyGuard(request: AntiCopyGuardRequest, signal?: AbortSignal): Promise<AntiCopyGuardResult>;\n    auditNarrativeStyle(request: NarrativeStyleAuditRequest, signal?: AbortSignal): Promise<NarrativeStyleAuditResult>;\n    assessPower(request: PowerAssessmentRequest, signal?: Abo /* …truncated — full shape in source */',
+  },
+  {
+    name: 'FanficRewriteMode',
+    declaration: 'export type FanficRewriteMode = \'inherit\' | \'replace\';',
+  },
+  {
+    name: 'FanficStateDelta',
+    declaration: 'export interface FanficStateDelta {\n    readonly fanficChapter: number;\n    readonly chapterSummary?: string;\n    readonly facts?: readonly Omit<FanficOverlayFact, \'id\' | \'recordedAt\' | \'originFanficChapter\' | \'originChapterVersionId\'>[];\n    readonly knowledge?: readonly Omit<FanficOverlayKnowledge, \'id\' | \'recordedAt\' | \'originFanficChapter\' | \'originChapterVersionId\'>[];\n    readonly characterStates?: readonly Omit<FanficOverlayCharacterState, \'id\' | \'recordedAt\' | \'originFanficChapter\' | \'originChapterVersionId\'>[];\n    readonly relationships?: readonly Omit<FanficOverlayRelationship, \'id\' | \'recordedAt\' | \'originFanficChapter\' | \'originChapterVersionId\'>[];\n    readonly causalThreads?: readonly Omit<FanficCausalThread, \'id\' | \'recordedAt\' | \'resolvedAt\' | \'originFanficChapter\' | \'originChapterVersionId\'>[];\n    readonly resolveCausalThreadIds?: readonly string[];\n}',
+  },
+  {
+    name: 'FanficStatus',
+    declaration: 'export interface FanficStatus {\n    readonly providerId: string;\n    readonly canonPackId: string;\n    readonly title: string;\n    readonly creator: string;\n    readonly sourceSha256: string;\n    readonly chapterCount: number;\n    readonly graphCounts: Readonly<Record<string, number>>;\n    readonly enrichmentCounts: Readonly<Record<CanonEnrichmentKind, number>>;\n    readonly styleBank: {\n        readonly chapterMetrics: number;\n        readonly modes: readonly string[];\n    };\n    readonly stateDir: string;\n}',
+  },
+  {
+    name: 'FanficStoryArc',
+    declaration: 'export interface FanficStoryArc {\n    readonly id: string;\n    readonly title: string;\n    readonly status: \'planned\' | \'active\' | \'completed\' | \'abandoned\';\n    readonly objective: string;\n    readonly centralConflict: string;\n    readonly themes: readonly string[];\n    readonly characters: readonly string[];\n    readonly startFanficChapter?: number;\n    readonly targetEndFanficChapter?: number;\n    readonly plannedPayoffs: readonly string[];\n    readonly notes: readonly string[];\n}',
+  },
+  {
+    name: 'FanficStoryDirectorState',
+    declaration: 'export interface FanficStoryDirectorState {\n    readonly arcs: readonly FanficStoryArc[];\n    readonly threads: readonly FanficStoryThread[];\n    readonly foreshadows: readonly FanficForeshadow[];\n    readonly horizon: readonly FanficChapterPlan[];\n    readonly mysteryTruths: readonly FanficMysteryTruth[];\n    readonly inventions: readonly FanficInvention[];\n    readonly reconciliation: readonly FanficDirectorReconciliation[];\n}',
+  },
+  {
+    name: 'FanficStoryThread',
+    declaration: 'export interface FanficStoryThread {\n    readonly id: string;\n    readonly kind: \'plot\' | \'character\' | \'mystery\' | \'relationship\' | \'theme\';\n    readonly status: \'open\' | \'dormant\' | \'resolved\' | \'abandoned\';\n    readonly priority: number;\n    readonly summary: string;\n    readonly entities: readonly string[];\n    readonly openedFanficChapter: number;\n    readonly targetFanficChapter?: number;\n    readonly dependencies: readonly string[];\n    readonly resolutionCriteria: readonly string[];\n}',
   },
   {
     name: 'FileDiff',
@@ -3472,6 +4025,38 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ModelModalityMap {\n    text: \'text\';\n    image: \'image\';\n}',
   },
   {
+    name: 'NarrativeStyleAuditRequest',
+    declaration: 'export interface NarrativeStyleAuditRequest extends NarrativeStyleContextRequest {\n    readonly draft: string;\n    readonly targetMinHanChars?: number;\n    readonly targetMaxHanChars?: number;\n    readonly antiCopyMinPhraseChars: number;\n    readonly antiCopyMaxFindings: number;\n}',
+  },
+  {
+    name: 'NarrativeStyleAuditResult',
+    declaration: 'export interface NarrativeStyleAuditResult {\n    readonly ok: boolean;\n    readonly auditReceipt?: FanficAuditReceipt;\n    readonly mode: Exclude<NarrativeStyleMode, \'auto\'>;\n    readonly draftMetrics: NarrativeStyleMetrics;\n    readonly referenceMetrics: NarrativeStyleMetrics;\n    readonly deviations: readonly NarrativeStyleDeviation[];\n    readonly antiCopy: AntiCopyGuardResult;\n    readonly lengthContract: {\n        readonly actualHanChars: number;\n        readonly minHanChars?: number;\n        readonly maxHanChars?: number;\n        readonly withinTarget: boolean;\n    };\n    readonly revisionGuidance: readonly string[];\n    readonly limitations: readonly string[];\n}',
+  },
+  {
+    name: 'NarrativeStyleContext',
+    declaration: 'export interface NarrativeStyleContext {\n    readonly asOfChapter: number;\n    readonly requestedMode: NarrativeStyleMode;\n    readonly resolvedMode: Exclude<NarrativeStyleMode, \'auto\'>;\n    readonly referenceMetrics: NarrativeStyleMetrics;\n    readonly globalMetrics: NarrativeStyleMetrics;\n    readonly projectStyleNotes: readonly string[];\n    readonly guidance: readonly string[];\n    readonly samples: readonly NarrativeStyleSample[];\n    readonly cautions: readonly string[];\n}',
+  },
+  {
+    name: 'NarrativeStyleContextRequest',
+    declaration: 'export interface NarrativeStyleContextRequest {\n    readonly asOfChapter: number;\n    readonly mode: NarrativeStyleMode;\n    readonly query: string;\n    readonly povCharacter?: string;\n    readonly participants: readonly string[];\n    readonly branchId?: FanficBranchId;\n    readonly fanficChapter?: number;\n    readonly sampleLimit: number;\n}',
+  },
+  {
+    name: 'NarrativeStyleDeviation',
+    declaration: 'export interface NarrativeStyleDeviation {\n    readonly metric: keyof NarrativeStyleMetrics;\n    readonly severity: \'warning\' | \'revision-required\';\n    readonly draftValue: number;\n    readonly referenceValue: number;\n    readonly message: string;\n}',
+  },
+  {
+    name: 'NarrativeStyleMetrics',
+    declaration: 'export interface NarrativeStyleMetrics {\n    readonly charCount: number;\n    readonly hanCharCount: number;\n    readonly paragraphCount: number;\n    readonly sentenceCount: number;\n    readonly dialogueCharRatio: number;\n    readonly meanSentenceChars: number;\n    readonly medianSentenceChars: number;\n    readonly meanParagraphChars: number;\n    readonly medianParagraphChars: number;\n    readonly shortParagraphRatio: number;\n    readonly questionRate: number;\n    readonly exclamationRate: number;\n    readonly ellipsisRate: number;\n}',
+  },
+  {
+    name: 'NarrativeStyleMode',
+    declaration: 'export type NarrativeStyleMode = \'auto\' | \'jianghu\' | \'mystery\' | \'reincarnation-mission\' | \'banter-introspection\' | \'combat\' | \'high-level-strategy\' | \'cosmology-philosophy\' | \'exposition\' | \'ensemble-rumor\' | \'emotional\';',
+  },
+  {
+    name: 'NarrativeStyleSample',
+    declaration: 'export interface NarrativeStyleSample {\n    readonly chapter: number;\n    readonly title: string;\n    readonly modeScore: number;\n    readonly metrics: NarrativeStyleMetrics;\n    readonly excerpt: string;\n    readonly provenance: CanonProvenance;\n}',
+  },
+  {
     name: 'ObjectJsonSchema',
     declaration: 'export type ObjectJsonSchema = JsonSchemaNode & {\n    type: \'object\';\n};',
   },
@@ -3486,6 +4071,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PostToolDecision',
     declaration: 'export type PostToolDecision = {\n    kind: \'accept\';\n    content?: ContentBlock[];\n    value?: never;\n    additionalContexts?: UserMessage[];\n} | {\n    kind: \'accept\';\n    value: JsonValue;\n    content?: never;\n    additionalContexts?: UserMessage[];\n} | {\n    kind: \'block\';\n    feedback: ContentBlock[];\n    additionalContexts?: UserMessage[];\n};',
+  },
+  {
+    name: 'PowerActorAssessment',
+    declaration: 'export interface PowerActorAssessment {\n    readonly actor: string;\n    readonly states: readonly CanonCharacterState[];\n    readonly powers: readonly CanonPowerState[];\n    readonly sourceEvidence: readonly CanonSearchHit[];\n}',
+  },
+  {
+    name: 'PowerAssessment',
+    declaration: 'export interface PowerAssessment {\n    readonly asOfChapter: number;\n    readonly scenario: string;\n    readonly actors: readonly PowerActorAssessment[];\n    readonly systemRules: readonly CanonPowerState[];\n    readonly timelineRules: readonly CanonTimelineRule[];\n    readonly verdict: \'constraints-found\' | \'insufficient-structured-data\';\n    readonly cautions: readonly string[];\n}',
+  },
+  {
+    name: 'PowerAssessmentRequest',
+    declaration: 'export interface PowerAssessmentRequest {\n    readonly actors: readonly string[];\n    readonly asOfChapter: number;\n    readonly scenario?: string;\n    readonly branchId?: FanficBranchId;\n    readonly fanficChapter?: number;\n    readonly evidenceLimit: number;\n}',
   },
   {
     name: 'PreparedLlmCall',
@@ -3578,6 +4175,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ReasoningEffortId',
     declaration: 'export type ReasoningEffortId = Branded<\'ReasoningEffortId\'>;',
+  },
+  {
+    name: 'RecordFanficDivergenceRequest',
+    declaration: 'export interface RecordFanficDivergenceRequest {\n    readonly branchId: FanficBranchId;\n    readonly expectedRevision: number;\n    readonly atChapter: number;\n    readonly eventOrdinal?: number;\n    readonly afterEventId?: string;\n    readonly sceneId?: string;\n    readonly summary: string;\n    readonly immediateConsequences: readonly string[];\n    readonly openQuestions: readonly string[];\n}',
   },
   {
     name: 'RedactedSecret',
@@ -3964,6 +4565,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SessionTitleUserMessage {\n    readonly seq: number;\n    readonly text: string;\n}',
   },
   {
+    name: 'SetFanficHorizonRequest',
+    declaration: 'export interface SetFanficHorizonRequest {\n    readonly branchId: FanficBranchId;\n    readonly expectedRevision: number;\n    readonly horizon: readonly FanficChapterPlan[];\n}',
+  },
+  {
     name: 'SettingsApplies',
     declaration: 'export type SettingsApplies = \'live\' | \'restart\';',
   },
@@ -4098,6 +4703,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'StoredImageAttachment',
     declaration: 'export interface StoredImageAttachment {\n    ref: ImageAttachmentRef;\n    data: Uint8Array;\n}',
+  },
+  {
+    name: 'StoryDirectorContext',
+    declaration: 'export interface StoryDirectorContext {\n    readonly branchId: FanficBranchId;\n    readonly revision: number;\n    readonly fanficChapter: number;\n    readonly activeArcs: readonly FanficStoryArc[];\n    readonly activeThreads: readonly FanficStoryThread[];\n    readonly dueThreads: readonly FanficStoryThread[];\n    readonly liveForeshadows: readonly FanficForeshadow[];\n    readonly mysteryTruths: readonly FanficMysteryTruth[];\n    readonly inventions: readonly FanficInvention[];\n    readonly horizon: readonly FanficChapterPlan[];\n    readonly recentChapterSummaries: readonly {\n        readonly fanficChapter: number;\n        readonly summary: string;\n    }[];\n    readonly unresolvedCausalThreads: readonly FanficCausalThread[];\n    readonly reconciliation: readonly FanficDirectorReconciliation[];\n    readonly attention: readonly string[];\n    readonly cautions: readonly string[];\n}',
+  },
+  {
+    name: 'StoryDirectorContextRequest',
+    declaration: 'export interface StoryDirectorContextRequest {\n    readonly branchId: FanficBranchId;\n    readonly fanficChapter: number;\n    readonly horizonSize: number;\n}',
   },
   {
     name: 'StreamChunk',
@@ -4530,6 +5143,34 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'TypertTypeModel',
     declaration: 'export interface TypertTypeModel {\n    readonly name: string;\n    readonly declaration: string;\n}',
+  },
+  {
+    name: 'UpdateFanficIntentRequest',
+    declaration: 'export interface UpdateFanficIntentRequest {\n    readonly branchId: FanficBranchId;\n    readonly expectedRevision: number;\n    readonly authorIntent: FanficAuthorIntent;\n}',
+  },
+  {
+    name: 'UpdateFanficStoryDirectorRequest',
+    declaration: 'export interface UpdateFanficStoryDirectorRequest {\n    readonly branchId: FanficBranchId;\n    readonly expectedRevision: number;\n    readonly storyDirector: FanficStoryDirectorState;\n}',
+  },
+  {
+    name: 'UpsertFanficForeshadowRequest',
+    declaration: 'export interface UpsertFanficForeshadowRequest {\n    readonly branchId: FanficBranchId;\n    readonly expectedRevision: number;\n    readonly foreshadow: FanficForeshadow;\n}',
+  },
+  {
+    name: 'UpsertFanficInventionRequest',
+    declaration: 'export interface UpsertFanficInventionRequest {\n    readonly branchId: FanficBranchId;\n    readonly expectedRevision: number;\n    readonly invention: FanficInvention;\n}',
+  },
+  {
+    name: 'UpsertFanficMysteryTruthRequest',
+    declaration: 'export interface UpsertFanficMysteryTruthRequest {\n    readonly branchId: FanficBranchId;\n    readonly expectedRevision: number;\n    readonly mysteryTruth: FanficMysteryTruth;\n}',
+  },
+  {
+    name: 'UpsertFanficStoryArcRequest',
+    declaration: 'export interface UpsertFanficStoryArcRequest {\n    readonly branchId: FanficBranchId;\n    readonly expectedRevision: number;\n    readonly arc: FanficStoryArc;\n}',
+  },
+  {
+    name: 'UpsertFanficStoryThreadRequest',
+    declaration: 'export interface UpsertFanficStoryThreadRequest {\n    readonly branchId: FanficBranchId;\n    readonly expectedRevision: number;\n    readonly thread: FanficStoryThread;\n}',
   },
   {
     name: 'UserMessage',

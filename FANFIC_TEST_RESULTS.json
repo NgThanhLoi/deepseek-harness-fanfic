@@ -1,0 +1,223 @@
+{
+  "version": "0.6",
+  "milestone": "Transactional Author Workflow",
+  "baseCommit": "47f943859bef60e4160492346772ded9b24f765a",
+  "toolApiVersion": "0.6.0",
+  "branchFormatVersion": 2,
+  "authorContextVersion": 3,
+  "modelFacingToolCount": 36,
+  "providerSmoke": {
+    "ok": true,
+    "status": {
+      "providerId": "local-smoke",
+      "canonPackId": "yishizhizun",
+      "title": "一世之尊",
+      "creator": "爱潜水的乌贼",
+      "sourceSha256": "760489c4ea428faa5d629fa0219ab7975424efa67d5e3b33dc8fc56d08224135",
+      "chapterCount": 1409,
+      "graphCounts": {
+        "facts": 4,
+        "knowledge": 3,
+        "characters": 2,
+        "identities": 2,
+        "powers": 3,
+        "relationships": 2,
+        "mysteries": 2,
+        "events": 2,
+        "timelineRules": 3,
+        "causalLinks": 1
+      },
+      "enrichmentCounts": {
+        "fact": 0,
+        "knowledge": 0,
+        "character": 0,
+        "identity": 0,
+        "power": 0,
+        "relationship": 0,
+        "mystery": 0,
+        "event": 0,
+        "timeline-rule": 0,
+        "causal-link": 0
+      },
+      "styleBank": {
+        "chapterMetrics": 1409,
+        "modes": [
+          "jianghu",
+          "mystery",
+          "reincarnation-mission",
+          "banter-introspection",
+          "combat",
+          "high-level-strategy",
+          "cosmology-philosophy",
+          "exposition",
+          "ensemble-rumor",
+          "emotional"
+        ]
+      },
+      "stateDir": "/mnt/data/dsh-fanfic-v06-work/deepseek-harness-fanfic-v0.5/.dsh-fanfic-state-smoke"
+    },
+    "cutoff": {
+      "beforeRevealMaxSourceChapter": 654,
+      "revealChapterFound": true
+    },
+    "epistemics": {
+      "beforeReveal": {
+        "facts": 0,
+        "identities": 0,
+        "povKnowledge": 0
+      },
+      "atReveal": {
+        "facts": 1,
+        "identities": 1,
+        "povKnowledge": 1
+      }
+    },
+    "audits": {
+      "prose": [
+        "PREMATURE_REVEAL",
+        "AUDIT_COVERAGE_UNDECLARED_KNOWLEDGE",
+        "POV_KNOWLEDGE_UNVERIFIED"
+      ],
+      "structured": [
+        "PREMATURE_IDENTITY_REVEAL"
+      ],
+      "counterfactual": [
+        "COUNTERFACTUAL_REVEAL_UNESTABLISHED",
+        "COUNTERFACTUAL_IDENTITY_UNESTABLISHED"
+      ],
+      "branchEstablished": []
+    },
+    "causalityLinks": 1,
+    "intelligence": {
+      "expansion": [
+        "顾小桑",
+        "小紫",
+        "张远山",
+        "江芷微",
+        "齐正言"
+      ],
+      "dossierEvidence": 3,
+      "voiceSamples": 3,
+      "powerVerdict": "insufficient-structured-data",
+      "timelineRules": 1,
+      "impactLinks": 1,
+      "styleMode": "mystery",
+      "styleSamples": 4,
+      "visibleCopyFindings": 1,
+      "futureCopyHidden": true,
+      "styleAuditOk": false
+    },
+    "enrichment": {
+      "accepted": true,
+      "id": "fact-smoke-guxiaosang-self-id",
+      "count": 1,
+      "coverage": 1
+    },
+    "director": {
+      "activeArcs": 1,
+      "activeThreads": 1,
+      "attention": [
+        "Due story thread thread-who-notices is not advanced by the current horizon: 谁会最先发现OC本应死亡却仍然存活？",
+        "Mystery thread thread-who-notices has no author-only mystery truth; define its mechanism/payoff before expanding the mystery."
+      ]
+    },
+    "branch": {
+      "revision": 6,
+      "theme": "自由与操纵",
+      "canonStableThrough": 99,
+      "canonReference": 150
+    }
+  },
+  "longformRegression": {
+    "ok": true,
+    "receipts": "transactional",
+    "rewrite": {
+      "mode": "inherit",
+      "inheritedCharacterState": 1,
+      "replaceDropped": true
+    },
+    "backfillBlocked": true,
+    "reconciliationResolved": true,
+    "contextChars": 17324,
+    "auditPrecision": {
+      "risky": [
+        {
+          "kind": "power",
+          "subject": "顾小桑",
+          "object": "顾小桑抬手催动白雾封住井口。"
+        }
+      ],
+      "ordinary": []
+    },
+    "style": {
+      "ok": false,
+      "required": [
+        "dialogueCharRatio",
+        "shortParagraphRatio"
+      ]
+    }
+  },
+  "checks": {
+    "focusedTypeScriptBuild": {
+      "status": "pass",
+      "typescript": "5.8.3",
+      "note": "Temporary local Node/typescript/workspace type stubs were used because the supplied checkout has no pnpm install; removed before distribution."
+    },
+    "providerSmoke1409": {
+      "status": "pass",
+      "chapterCount": 1409
+    },
+    "longformRegressionSmoke": {
+      "status": "pass",
+      "covers": [
+        "exact-draft three-receipt commit gate",
+        "receipt draft/revision binding and one-time consumption",
+        "rewrite inherit preserves structured state",
+        "rewrite replace requires dropped-state confirmation",
+        "backfill ownership rejection",
+        "Story Director reconciliation",
+        "same-chapter divergence",
+        "audit precision for ordinary weapon actions",
+        "revision-required style drift",
+        "hard author-context budget"
+      ]
+    },
+    "workspaceConstraints": {
+      "status": "pass"
+    },
+    "packageInvariants": {
+      "status": "pass",
+      "message": "223 hand-owned package companion(s) conform."
+    },
+    "packageLicenses": {
+      "status": "pass",
+      "message": "226 DSH package(s) checked; all declare MIT."
+    },
+    "agentNoteFormat": {
+      "status": "pass",
+      "message": "542 Agent Notes conform."
+    },
+    "agentNoteClassification": {
+      "status": "pass",
+      "message": "542 Agent Notes structurally consistent."
+    },
+    "exportJSDoc": {
+      "status": "partial",
+      "fanficViolations": 0,
+      "upstreamViolations": 8,
+      "upstreamFile": "packages/subagent/subagent-claude-code/src/process.ts"
+    },
+    "markdownReadmeGates": {
+      "status": "blocked",
+      "reason": "Supplied checkout has no workspace install; mdast-util-from-markdown is unavailable."
+    },
+    "runtimeBundlePreflight": {
+      "status": "not-run",
+      "reason": "Requires normal pnpm/tsdown build to produce lib/index.js; script is updated to require tool API 0.6.0."
+    },
+    "fullPnpmInstallBuildTest": {
+      "status": "blocked",
+      "reason": "Sandbox Node is 22.16.0 while Harness requires ^22.19 || >=24, and npm registry access is unavailable."
+    }
+  }
+}

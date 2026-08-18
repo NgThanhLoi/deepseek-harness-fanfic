@@ -26,6 +26,7 @@
 | `@deepseek-ai/dsh-tool-bash-persistent` | `bash` | `ctx.tools`、`ctx.terminals`、`an owning Agent at execution time` | `tool/call`、`PTY shell state`、`tool/result` | - | 一个按所有者隔离的持久 bash 工具；部署组合提供 PTY 后端，并可覆盖面向模型的环境描述。 |
 | `@deepseek-ai/dsh-tool-str-replace-editor` | `str_replace_editor` | `ctx.tools`、`ctx.fs` | `tool/call`、`fs/observed after view presence/absence, edit absence, or successful mutation`、`tool/result` | - | 基于文件系统 seam 的独立查看／创建／唯一字面量替换／按行插入工具；可与任何 shell 或终端接口组合。 |
 | `@deepseek-ai/dsh-tool-fs` | `edit`、`read`、`read_image`、`write` | `ctx.tools`、`ctx.fs`、`ctx.systemPrompt`、`ctx.attachments (read_image registration)`、`ctx.llm + an image-capable route (read_image execution)` | `tool/call`、`fs/write-intent or fs/edit-intent for mutations`、`fs/observed after read presence/absence or successful file operation`、`durable attachment (read_image)`、`tool/result` | - | 先读后写／编辑策略由 `@deepseek-ai/dsh-fs-observation-policy` 添加；它是一个 `fs/*` 事件门禁插件，不会改变 schema。加载这些工具的部署按预期也应加载该插件。没有 `ctx.attachments` 时 `read_image` 不会注册；其 schema 与路由无关，执行时除非确切路由的模型声明图像输入，否则拒绝。 |
+| `@deepseek-ai/dsh-tool-fanfic` | `anti_copy_guard`、`author_context`、`canon_causality_trace`、`canon_chapter_read`、`canon_context_expand`、`canon_enrichment_checkpoint`、`canon_enrichment_commit`、`canon_enrichment_plan`、`canon_enrichment_progress`、`canon_enrichment_validate`、`canon_search`、`canon_snapshot`、`canon_timeline_context`、`character_intelligence`、`character_voice_context`、`fanfic_apply_delta`、`fanfic_audit`、`fanfic_branch_create`、`fanfic_branch_get`、`fanfic_branch_list`、`fanfic_chapter_state`、`fanfic_divergence_record`、`fanfic_impact_scan`、`fanfic_intent_update`、`fanfic_status`、`fanfic_style_audit`、`invention_upsert`、`mystery_truth_upsert`、`narrative_style_context`、`power_assess`、`story_arc_upsert`、`story_director_context`、`story_foreshadow_upsert`、`story_horizon_set`、`story_reconciliation_resolve`、`story_thread_upsert` | `ctx.tools`、`ctx.fanfic`、`ctx.systemPrompt`、`a read-only canon source + branch-state Provider at execution time` | `tool/call`、`mutable branch state through the fanfic Provider`、`tool/result` | - | 面向 `ctx.fanfic` 的选择启用同人写作工具，只能从 fanfic-authoring bundle patch 加载（绝不进入基础组合）。36 个模型可见的 schema 与提供方无关；部署方在执行时为它们提供正典包与分支状态提供方（例如 `@deepseek-ai/dsh-fanfic-local`）。 |
 | `@deepseek-ai/dsh-tool-fs-search` | `glob`、`grep` | `ctx.tools`、`ctx.subprocess`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn 随包提供的 ripgrep 二进制文件（`@vscode/ripgrep`），并作为普通前台调用运行，绝不作为后台任务；无需在宿主机安装 `rg`，也不经过 shell 层。本目录使用 `sampleOverCapGlobResults: true`；部署必须显式选择该行为。结果超过上限时，会通过可选的 ctx.spillStore 后端保存完整的格式化列表；在共置部署中，如果后端公开本地路径，返回的定位信息可供后续读取／搜索。 |
 | `@deepseek-ai/dsh-tool-terminal` | `terminal_close`、`terminal_list`、`terminal_open`、`terminal_read`、`terminal_send`、`terminal_signal` | `ctx.tools`、`ctx.terminals`、`ctx.systemPrompt`、`ctx.jobs at call time for run_in_background` | `tool/call`、`tool/result` | - | 这 6 个终端工具需要选择启用，用于补充一次性 bash／文件系统工具。`terminal_send(run_in_background: true)` 会注册到 `ctx.jobs`；schema 不包含 TUI、具名按键序列、BEL、调整尺寸、自动启动和跨 agent 共享。 |
 | `@deepseek-ai/dsh-tool-goal` | `create_goal`、`get_goal`、`update_goal` | `ctx.tools`、`ctx.agents`、`ctx.goals`、`ctx.systemPrompt`、`a calling Agent in an authorized open turn` | `tool/call`、`goal/change for mutations`、`tool/result` | - | create、edit、pause 和 resume 要求直接来自人类的根权限；complete 和 blocked 也接受确切的当前 Goal Round。blocked 的默认下限是 3 个获准的 Round。 |
@@ -776,6 +777,1866 @@ pwsh 工具是 Windows 组合中 bash 执行器 seam 的 PowerShell 方言消费
 来源：[`packages/fs/tool-fs-search/src/index.ts`](../packages/fs/tool-fs-search/src/index.ts)
 
 glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn 随包提供的 ripgrep 二进制文件（`@vscode/ripgrep`），并作为普通前台调用运行，绝不作为后台任务；无需在宿主机安装 `rg`，也不经过 shell 层。本目录使用 `sampleOverCapGlobResults: true`；部署必须显式选择该行为。结果超过上限时，会通过可选的 ctx.spillStore 后端保存完整的格式化列表；在共置部署中，如果后端公开本地路径，返回的定位信息可供后续读取／搜索。
+
+<a id="deepseek-aidsh-tool-fanfic"></a>
+## `@deepseek-ai/dsh-tool-fanfic`
+### `anti_copy_guard`
+
+检测草稿与整个不可变正典语料之间的精确规范化短语重叠。未来源内容的匹配位置仍隐藏在剧透截止点之后。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "draft": {
+      "type": "string"
+    },
+    "asOfChapter": {
+      "type": "integer"
+    },
+    "branchId": {
+      "type": "string",
+      "description": "Optional branch UUID or unique branch name; required with fanficChapter to issue an anti-copy commit receipt."
+    },
+    "fanficChapter": {
+      "type": "integer"
+    },
+    "minPhraseChars": {
+      "type": "integer"
+    },
+    "maxFindings": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "draft",
+    "asOfChapter"
+  ]
+}
+```
+来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+### `author_context`
+
+组合同人写作规划者／作者应使用的场景包：既定的正典真相、POV 认知、源证据、分叉策略、可选分支覆盖层与工作流约束。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "asOfChapter": {
+      "type": "integer"
+    },
+    "povCharacter": {
+      "type": "string"
+    },
+    "participants": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "sceneGoal": {
+      "type": "string"
+    },
+    "query": {
+      "type": "string"
+    },
+    "branchId": {
+      "type": "string"
+    },
+    "fanficChapter": {
+      "type": "integer"
+    },
+    "storyHorizonSize": {
+      "type": "integer",
+      "description": "Rolling Director horizon; defaults to 5."
+    },
+    "styleMode": {
+      "type": "string",
+      "enum": [
+        "auto",
+        "jianghu",
+        "mystery",
+        "reincarnation-mission",
+        "banter-introspection",
+        "combat",
+        "high-level-strategy",
+        "cosmology-philosophy",
+        "exposition",
+        "ensemble-rumor",
+        "emotional"
+      ]
+    },
+    "styleSampleLimit": {
+      "type": "integer",
+      "description": "Narrative style evidence windows; defaults to 4."
+    }
+  },
+  "required": [
+    "asOfChapter",
+    "povCharacter",
+    "sceneGoal"
+  ]
+}
+```
+来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+### `canon_causality_trace`
+
+按叙事截止点搜索已确立的、有源支撑的正典因果链。分叉之后使用此工具识别可能不再成立的依赖。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string"
+    },
+    "asOfChapter": {
+      "type": "integer"
+    },
+    "limit": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "query",
+    "asOfChapter"
+  ]
+}
+```
+来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+### `canon_chapter_read`
+
+仅当一章位于或早于调用方提供的剧透截止点时，读取该确切的章。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "chapter": {
+      "type": "integer"
+    },
+    "asOfChapter": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "chapter",
+    "asOfChapter"
+  ]
+}
+```
+来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+### `canon_context_expand`
+
+发现防剧透的图邻接实体——即使初始提示没有点名，它们也可能与场景相关。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "asOfChapter": {
+      "type": "integer"
+    },
+    "seeds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "query": {
+      "type": "string"
+    },
+    "maxEntities": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "asOfChapter",
+    "seeds"
+  ]
+}
+```
+来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+### `canon_enrichment_checkpoint`
+
+在本次处理的所有已接受记录提交后，将一章与一个结构化记录族标记为已审核。被引用的记录 id 必须存在且来自该确切章节；只有实际审核确认没有值得录入的内容时才使用 noFindings。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "chapter": {
+      "type": "integer"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "fact",
+        "knowledge",
+        "character",
+        "identity",
+        "power",
+        "relationship",
+        "mystery",
+        "event",
+        "timeline-rule",
+        "causal-link"
+      ]
+    },
+    "recordIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "noFindings": {
+      "type": "boolean"
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "chapter",
+    "kind",
+    "noFindings"
+  ]
+}
+```
+来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+### `canon_enrichment_commit`
+
+把先前通过令牌验证的结构化正典记录提交到本地已验证的补全覆盖层。不可变的基础正典包永远不会被修改。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "token": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "fact",
+        "knowledge",
+        "character",
+        "identity",
+        "power",
+        "relationship",
+        "mystery",
+        "event",
+        "timeline-rule",
+        "causal-link"
+      ]
+    },
+    "chapter": {
+      "type": "integer"
+    },
+    "evidence": {
+      "type": "string"
+    },
+    "rationale": {
+      "type": "string"
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {}
+    }
+  },
+  "required": [
+    "token",
+    "kind",
+    "chapter",
+    "evidence",
+    "payload"
+  ]
+}
+```
+来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+### `canon_enrichment_plan`
+
+返回选定结构化记录族尚未审核的后续源章节。这是由 LLM 驱动的正典消化的确定性工作队列。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "fromChapter": {
+      "type": "integer"
+    },
+    "toChapter": {
+      "type": "integer"
+    },
+    "kinds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "fact",
+          "knowledge",
+          "character",
+          "identity",
+          "power",
+          "relationship",
+          "mystery",
+          "event",
+          "timeline-rule",
+          "causal-link"
+        ]
+      }
+    },
+    "batchSize": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "fromChapter",
+    "toChapter",
+    "kinds"
+  ]
+}
+```
+来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+### `canon_enrichment_progress`
+
+检查章节 × 记录族的有效补全覆盖率，避免重复消化已审核的源单元。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "fromChapter": {
+      "type": "integer"
+    },
+    "toChapter": {
+      "type": "integer"
+    },
+    "kinds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "fact",
+          "knowledge",
+          "character",
+          "identity",
+          "power",
+          "relationship",
+          "mystery",
+          "event",
+          "timeline-rule",
+          "causal-link"
+        ]
+      }
+    }
+  },
+  "required": [
+    "fromChapter",
+    "toChapter",
+    "kinds"
+  ]
+}
+```
+来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+### `canon_enrichment_validate`
+
+将提议的结构化正典记录与确切的不变章节摘录进行校验。只有证据与记录结构都通过验证时才返回令牌。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": [
+        "fact",
+        "knowledge",
+        "character",
+        "identity",
+        "power",
+        "relationship",
+        "mystery",
+        "event",
+        "timeline-rule",
+        "causal-link"
+      ]
+    },
+    "chapter": {
+      "type": "integer"
+    },
+    "evidence": {
+      "type": "string"
+    },
+    "rationale": {
+      "type": "string"
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {}
+    }
+  },
+  "required": [
+    "kind",
+    "chapter",
+    "evidence",
+    "payload"
+  ]
+}
+```
+来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+### `canon_search`
+
+在显式的叙事章节截止点之前搜索不可变的正典源文本。未来章节在排序前被排除。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "description": "Names, techniques, events, or phrases to find."
+    },
+    "asOfChapter": {
+      "type": "integer",
+      "description": "Maximum canon narrative chapter the result may use."
+    },
+    "limit": {
+      "type": "integer",
+      "description": "Maximum hits; defaults to 6."
+    }
+  },
+  "required": [
+    "query",
+    "asOfChapter"
+  ]
+}
+```
+来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+### `canon_snapshot`
+
+构建结构化的防剧透正典快照：时间事实、POV 知识、身份、实力、关系、谜题、事件与有界源证据。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "asOfChapter": {
+      "type": "integer"
+    },
+    "povCharacter": {
+      "type": "string"
+    },
+    "entities": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "query": {
+      "type": "string"
+    },
+    "searchLimit": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "asOfChapter"
+  ]
+}
+```
+来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+### `canon_timeline_context`
+
+在一个正典截止点查询防剧透的时间线／世界线规则、相关事件、已揭示的身份与源证据。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "asOfChapter": {
+      "type": "integer"
+    },
+    "worldline": {
+      "type": "string"
+    },
+    "query": {
+      "type": "string"
+    },
+    "entities": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "limit": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "asOfChapter"
+  ]
+}
+```
+来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+### `character_intelligence`
+
+从时间状态、身份、实力、关系、认知、分支覆盖层与源证据构建截止点安全的人物档案。缺失的数据报告为缺口，而不是编造。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "character": {
+      "type": "string"
+    },
+    "asOfChapter": {
+      "type": "integer"
+    },
+    "povCharacter": {
+      "type": "string"
+    },
+    "branchId": {
+      "type": "string"
+    },
+    "fanficChapter": {
+      "type": "integer"
+    },
+    "evidenceLimit": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "character",
+    "asOfChapter"
+  ]
+}
+```
+来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+### `character_voice_context`
+
+在一个正典截止点检索一个角色周围有界、有源支撑的对话／声音证据，外加任何结构化声音笔记。上下文片段不断言确切的说话者归属；用 canon_chapter_read 核实模糊片段。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "character": {
+      "type": "string"
+    },
+    "asOfChapter": {
+      "type": "integer"
+    },
+    "limit": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "character",
+    "asOfChapter"
+  ]
+}
+```
+来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+### `fanfic_apply_delta`
+
+事务化的已接受章节提交。要求该确切草稿的正典／风格／防抄袭收据全部通过。新章节持久化结构化状态；重写显式继承或替换前一版活跃章节版本。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "branchId": {
+      "type": "string",
+      "description": "Branch UUID or unique branch name."
+    },
+    "expectedRevision": {
+      "type": "integer"
+    },
+    "fanficChapter": {
+      "type": "integer"
+    },
+    "draft": {
+      "type": "string",
+      "description": "Exact accepted prose that produced the audit receipts."
+    },
+    "auditReceiptIds": {
+      "type": "array",
+      "description": "Exactly three receipts from fanfic_audit, fanfic_style_audit, and anti_copy_guard for this draft/revision.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "rewriteMode": {
+      "type": "string",
+      "description": "Required only when rewriting an existing chapter. inherit carries prior structured state; replace discards it.",
+      "enum": [
+        "inherit",
+        "replace"
+      ]
+    },
+    "dropInheritedRecordIds": {
+      "type": "array",
+      "description": "When rewriteMode=inherit, old chapter record ids to omit from the inherited state.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "confirmDroppedState": {
+      "type": "boolean",
+      "description": "Required true when rewriteMode=replace would discard active structured state."
+    },
+    "chapterSummary": {
+      "type": "string"
+    },
+    "facts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "subject": {
+            "type": "string"
+          },
+          "predicate": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string"
+          },
+          "validFromFanficChapter": {
+            "type": "integer"
+          },
+          "validUntilFanficChapter": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "subject",
+          "predicate",
+          "object",
+          "validFromFanficChapter"
+        ]
+      }
+    },
+    "knowledge": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "character": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "predicate": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "stance": {
+            "type": "string",
+            "enum": [
+              "knows",
+              "suspects",
+              "believes-false"
+            ]
+          },
+          "fromFanficChapter": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "character",
+          "summary",
+          "stance",
+          "fromFanficChapter"
+        ]
+      }
+    },
+    "characterStates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "character": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "fromFanficChapter": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "character",
+          "summary",
+          "fromFanficChapter"
+        ]
+      }
+    },
+    "relationships": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "subject": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "fromFanficChapter": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "subject",
+          "object",
+          "summary",
+          "fromFanficChapter"
+        ]
+      }
+    },
+    "causalThreads": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "summary": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "resolved"
+            ]
+          },
+          "fromFanficChapter": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "summary",
+          "status",
+          "fromFanficChapter"
+        ]
+      }
+    },
+    "resolveCausalThreadIds": {
+      "type": "array",
+      "description": "Existing branch causal-thread ids to mark resolved by this accepted chapter.",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "branchId",
+    "expectedRevision",
+    "fanficChapter",
+    "draft",
+    "auditReceiptIds"
+  ]
+}
+```
+来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+### `fanfic_audit`
+
+运行确定性的防剧透／揭示检查，并根据当前正典快照校验结构化知识、身份、正典事实与实力声明。缺失的图数据产生警告，而不是编造的事实。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "draft": {
+      "type": "string"
+    },
+    "asOfChapter": {
+      "type": "integer"
+    },
+    "povCharacter": {
+      "type": "string"
+    },
+    "branchId": {
+      "type": "string"
+    },
+    "fanficChapter": {
+      "type": "integer",
+      "description": "Fanfic chapter being audited; state from this chapter and later is hidden so rewrites cannot self-justify."
+    },
+    "participants": {
+      "type": "array",
+      "description": "Scene participants used by the independent claim extractor.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "knowledge",
+              "canon-fact",
+              "identity",
+              "power"
+            ]
+          },
+          "subject": {
+            "type": "string"
+          },
+          "predicate": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "subject"
+        ]
+      }
+    }
+  },
+  "required": [
+    "draft",
+    "asOfChapter",
+    "povCharacter"
+  ]
+}
+```
+来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+### `fanfic_branch_create`
+
+在一个正典起始章节创建隔离的可变同人分支。原始正典保持不可变。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "baseChapter": {
+      "type": "integer"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "premise": {
+      "type": "string"
+    },
+    "divergenceMode": {
+      "type": "string",
+      "enum": [
+        "canon-compliant",
+        "soft-divergence",
+        "hard-au"
+      ]
+    }
+  },
+  "required": [
+    "name",
+    "baseChapter"
+  ]
+}
+```
+来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+### `fanfic_branch_get`
+
+读取完整的管理分支快照，包括更晚的同人状态。不要把它当作场景上下文使用；请使用带 fanficChapter 的 author_context，以避免同人未来内容泄漏。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "branchId": {
+      "type": "string",
+      "description": "Branch UUID or unique branch name."
+    }
+  },
+  "required": [
+    "branchId"
+  ]
+}
+```
+来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+### `fanfic_branch_list`
+
+列出现有本地同人分支及其最新修订版本。
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+### `fanfic_chapter_state`
+
+检查一个同人章节版本所拥有的活跃结构化状态。重写前使用它决定继承、丢弃或替换什么，而无需抓取整个分支。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "branchId": {
+      "type": "string",
+      "description": "Branch UUID or unique branch name."
+    },
+    "fanficChapter": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "branchId",
+    "fanficChapter"
+  ]
+}
+```
+来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+### `fanfic_divergence_record`
+
+记录分支停止遵循正典的事件。需要最新的分支修订版本，使并发写作者无法互相覆盖。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "branchId": {
+      "type": "string",
+      "description": "Branch UUID or unique branch name."
+    },
+    "expectedRevision": {
+      "type": "integer"
+    },
+    "atChapter": {
+      "type": "integer"
+    },
+    "eventOrdinal": {
+      "type": "integer",
+      "description": "Optional 1-based canon event order within the chapter; use for mid-chapter divergence."
+    },
+    "afterEventId": {
+      "type": "string",
+      "description": "Optional structured canon event id after which divergence begins."
+    },
+    "sceneId": {
+      "type": "string"
+    },
+    "summary": {
+      "type": "string"
+    },
+    "immediateConsequences": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "openQuestions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "branchId",
+    "expectedRevision",
+    "atChapter",
+    "summary"
+  ]
+}
+```
+来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+### `fanfic_impact_scan`
+
+针对提议的分叉扫描有源支撑的因果链、依赖的正典事件、图邻接实体与当前分支因果线。这是依赖发现，而不是未来预言。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "asOfChapter": {
+      "type": "integer"
+    },
+    "summary": {
+      "type": "string"
+    },
+    "entities": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "branchId": {
+      "type": "string"
+    },
+    "fanficChapter": {
+      "type": "integer"
+    },
+    "limit": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "asOfChapter",
+    "summary"
+  ]
+}
+```
+来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+### `fanfic_intent_update`
+
+用 compare-and-set 修订版本替换分支作者意图。这是关于前提、分叉模式、主题、基调、POV、角色优先级、禁止结果与风格笔记的项目策略。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "branchId": {
+      "type": "string",
+      "description": "Branch UUID or unique branch name."
+    },
+    "expectedRevision": {
+      "type": "integer"
+    },
+    "premise": {
+      "type": "string"
+    },
+    "divergenceMode": {
+      "type": "string",
+      "enum": [
+        "canon-compliant",
+        "soft-divergence",
+        "hard-au"
+      ]
+    },
+    "themes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "tone": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "povPolicy": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "characterPriorities": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "forbiddenOutcomes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "styleNotes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "branchId",
+    "expectedRevision",
+    "premise",
+    "divergenceMode"
+  ]
+}
+```
+来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+### `fanfic_status`
+
+检查活跃的正典包、结构化图计数与分支状态目录。
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+### `fanfic_style_audit`
+
+针对所选场景模式的高层作品风格指标审计草稿，并运行语料库级的防抄袭守卫。风格漂移是建议性的；确切的源重叠应当重写。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "draft": {
+      "type": "string"
+    },
+    "asOfChapter": {
+      "type": "integer"
+    },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "auto",
+        "jianghu",
+        "mystery",
+        "reincarnation-mission",
+        "banter-introspection",
+        "combat",
+        "high-level-strategy",
+        "cosmology-philosophy",
+        "exposition",
+        "ensemble-rumor",
+        "emotional"
+      ]
+    },
+    "query": {
+      "type": "string"
+    },
+    "povCharacter": {
+      "type": "string"
+    },
+    "participants": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "branchId": {
+      "type": "string"
+    },
+    "fanficChapter": {
+      "type": "integer"
+    },
+    "sampleLimit": {
+      "type": "integer"
+    },
+    "antiCopyMinPhraseChars": {
+      "type": "integer"
+    },
+    "antiCopyMaxFindings": {
+      "type": "integer"
+    },
+    "targetMinHanChars": {
+      "type": "integer",
+      "description": "Optional minimum Han-character count for the accepted chapter."
+    },
+    "targetMaxHanChars": {
+      "type": "integer",
+      "description": "Optional maximum Han-character count for the accepted chapter."
+    }
+  },
+  "required": [
+    "draft",
+    "asOfChapter"
+  ]
+}
+```
+来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+### `invention_upsert`
+
+注册同人原创的造物、技法、组织、机制、角色或地点，并附上稳定的能力、约束、代价、来源与正典兼容性说明。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "branchId": {
+      "type": "string",
+      "description": "Branch UUID or unique branch name."
+    },
+    "expectedRevision": {
+      "type": "integer"
+    },
+    "invention": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "artifact",
+            "technique",
+            "organization",
+            "mechanism",
+            "character",
+            "location",
+            "other"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "originFanficChapter": {
+          "type": "integer"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "constraints": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "costs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "powerSource": {
+          "type": "string"
+        },
+        "owner": {
+          "type": "string"
+        },
+        "canonCompatibility": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "relatedThreads": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "name",
+        "originFanficChapter",
+        "summary",
+        "powerSource"
+      ]
+    }
+  },
+  "required": [
+    "branchId",
+    "expectedRevision",
+    "invention"
+  ]
+}
+```
+来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+### `mystery_truth_upsert`
+
+持久化同人原创谜题背后的仅作者可见的真相。这是作者元数据，绝不能当作 POV 知识。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "branchId": {
+      "type": "string",
+      "description": "Branch UUID or unique branch name."
+    },
+    "expectedRevision": {
+      "type": "integer"
+    },
+    "mysteryTruth": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "planned",
+            "active",
+            "revealed",
+            "retired"
+          ]
+        },
+        "label": {
+          "type": "string"
+        },
+        "secretTruth": {
+          "type": "string"
+        },
+        "mechanism": {
+          "type": "string"
+        },
+        "allowedClues": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "falseLeads": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "revealConditions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "plannedPayoff": {
+          "type": "string"
+        },
+        "relatedThreads": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "label",
+        "secretTruth",
+        "mechanism",
+        "plannedPayoff"
+      ]
+    }
+  },
+  "required": [
+    "branchId",
+    "expectedRevision",
+    "mysteryTruth"
+  ]
+}
+```
+来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+### `narrative_style_context`
+
+检索防剧透的作品级叙事节奏指导，适用于一个场景模式。返回聚合指标与有界的证据窗口；它不是要求逐字模仿某位在世作者或复制源文措辞的指令。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "asOfChapter": {
+      "type": "integer"
+    },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "auto",
+        "jianghu",
+        "mystery",
+        "reincarnation-mission",
+        "banter-introspection",
+        "combat",
+        "high-level-strategy",
+        "cosmology-philosophy",
+        "exposition",
+        "ensemble-rumor",
+        "emotional"
+      ]
+    },
+    "query": {
+      "type": "string"
+    },
+    "povCharacter": {
+      "type": "string"
+    },
+    "participants": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "branchId": {
+      "type": "string"
+    },
+    "fanficChapter": {
+      "type": "integer"
+    },
+    "sampleLimit": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "asOfChapter"
+  ]
+}
+```
+来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+### `power_assess`
+
+在一个正典截止点评估一个或多个行动者有源支撑的能力约束。它刻意不从境界标签推断确定性的胜者。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "actors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "asOfChapter": {
+      "type": "integer"
+    },
+    "scenario": {
+      "type": "string"
+    },
+    "branchId": {
+      "type": "string"
+    },
+    "fanficChapter": {
+      "type": "integer"
+    },
+    "evidenceLimit": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "actors",
+    "asOfChapter"
+  ]
+}
+```
+来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+### `story_arc_upsert`
+
+用显式 schema 与 compare-and-set 分支修订版本创建或替换一个 Story Director arc。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "branchId": {
+      "type": "string",
+      "description": "Branch UUID or unique branch name."
+    },
+    "expectedRevision": {
+      "type": "integer"
+    },
+    "arc": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "planned",
+            "active",
+            "completed",
+            "abandoned"
+          ]
+        },
+        "objective": {
+          "type": "string"
+        },
+        "centralConflict": {
+          "type": "string"
+        },
+        "themes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "characters": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "startFanficChapter": {
+          "type": "integer"
+        },
+        "targetEndFanficChapter": {
+          "type": "integer"
+        },
+        "plannedPayoffs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "status",
+        "objective",
+        "centralConflict"
+      ]
+    }
+  },
+  "required": [
+    "branchId",
+    "expectedRevision",
+    "arc"
+  ]
+}
+```
+来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+### `story_director_context`
+
+为分支构建紧凑的长篇规划包：活跃的 arc、按优先级排序的线索、到期的承诺、存活的伏笔、滚动章节地平线、近期摘要、未解决的分叉后果与确定性的关注项。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "branchId": {
+      "type": "string",
+      "description": "Branch UUID or unique branch name."
+    },
+    "fanficChapter": {
+      "type": "integer"
+    },
+    "horizonSize": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "branchId",
+    "fanficChapter"
+  ]
+}
+```
+来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+### `story_foreshadow_upsert`
+
+用显式的揭示时机元数据创建或替换一个伏笔／兑现承诺。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "branchId": {
+      "type": "string",
+      "description": "Branch UUID or unique branch name."
+    },
+    "expectedRevision": {
+      "type": "integer"
+    },
+    "foreshadow": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "planned",
+            "planted",
+            "paid-off",
+            "retired"
+          ]
+        },
+        "clue": {
+          "type": "string"
+        },
+        "payoff": {
+          "type": "string"
+        },
+        "relatedThreads": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "plantedFanficChapter": {
+          "type": "integer"
+        },
+        "targetFanficChapter": {
+          "type": "integer"
+        },
+        "payoffFanficChapter": {
+          "type": "integer"
+        },
+        "subtlety": {
+          "type": "string",
+          "enum": [
+            "background",
+            "noticeable",
+            "explicit"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "clue",
+        "payoff",
+        "subtlety"
+      ]
+    }
+  },
+  "required": [
+    "branchId",
+    "expectedRevision",
+    "foreshadow"
+  ]
+}
+```
+来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+### `story_horizon_set`
+
+用显式验证的章节计划替换滚动的 3–5 章地平线。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "branchId": {
+      "type": "string",
+      "description": "Branch UUID or unique branch name."
+    },
+    "expectedRevision": {
+      "type": "integer"
+    },
+    "horizon": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "fanficChapter": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "planned",
+              "drafted",
+              "accepted"
+            ]
+          },
+          "goal": {
+            "type": "string"
+          },
+          "pov": {
+            "type": "string"
+          },
+          "beats": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "advanceThreads": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "plantForeshadows": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "payoffForeshadows": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "constraints": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "fanficChapter",
+          "status",
+          "goal",
+          "pov"
+        ]
+      }
+    }
+  },
+  "required": [
+    "branchId",
+    "expectedRevision",
+    "horizon"
+  ]
+}
+```
+来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+### `story_reconciliation_resolve`
+
+在受影响的地平线／线索／伏笔／arc 元数据被审核并更新后，将一个 Story Director 对账问题标记为已解决。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "branchId": {
+      "type": "string",
+      "description": "Branch UUID or unique branch name."
+    },
+    "expectedRevision": {
+      "type": "integer"
+    },
+    "reconciliationId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "branchId",
+    "expectedRevision",
+    "reconciliationId"
+  ]
+}
+```
+来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+### `story_thread_upsert`
+
+用显式字段创建或替换一个情节／角色／谜题／关系／主题线索。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "branchId": {
+      "type": "string",
+      "description": "Branch UUID or unique branch name."
+    },
+    "expectedRevision": {
+      "type": "integer"
+    },
+    "thread": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "plot",
+            "character",
+            "mystery",
+            "relationship",
+            "theme"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "open",
+            "dormant",
+            "resolved",
+            "abandoned"
+          ]
+        },
+        "priority": {
+          "type": "integer"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "entities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "openedFanficChapter": {
+          "type": "integer"
+        },
+        "targetFanficChapter": {
+          "type": "integer"
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "resolutionCriteria": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "status",
+        "priority",
+        "summary",
+        "openedFanficChapter"
+      ]
+    }
+  },
+  "required": [
+    "branchId",
+    "expectedRevision",
+    "thread"
+  ]
+}
+```
+来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+面向 `ctx.fanfic` 的选择启用同人写作工具，只能从 fanfic-authoring bundle patch 加载（绝不进入基础组合）。36 个模型可见的 schema 与提供方无关；部署方在执行时为它们提供正典包与分支状态提供方（例如 `@deepseek-ai/dsh-fanfic-local`）。
 
 <a id="deepseek-aidsh-tool-terminal"></a>
 

@@ -63,6 +63,8 @@ import * as ToolWeb from '@deepseek-ai/dsh-tool-web'
 import VmWorkflowEngine from '@deepseek-ai/dsh-workflow-worker-thread'
 import * as ToolRalph from '@deepseek-ai/dsh-tool-ralph'
 import * as ToolWorkflow from '@deepseek-ai/dsh-tool-workflow'
+import FanficRuntime from '@deepseek-ai/dsh-fanfic'
+import * as ToolFanfic from '@deepseek-ai/dsh-tool-fanfic'
 import { githubSlug } from './verify-md-links.ts'
 
 /** Attachment seam marker that makes the attachments-conditional `read_image` schema harvestable. */
@@ -327,6 +329,35 @@ const TOOL_PACKAGES: ToolPackage[] = [
     },
     note:
       'glob and grep are unconditional discovery tools that spawn the packaged ripgrep binary (`@vscode/ripgrep`) through ctx.subprocess as ordinary foreground calls (never background jobs) — no host `rg` install and no shell layer. The catalog uses `sampleOverCapGlobResults: true`; deployments must choose that behavior explicitly. Capped results save the complete formatted list through the optional ctx.spillStore backend; returned locators are follow-up-readable/searchable when the backend exposes local paths in co-located deployments.',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tool-fanfic',
+    dir: 'tool-fanfic',
+    source: 'packages/fanfic/tool-fanfic/src/index.ts',
+    requires: ['ctx.tools', 'ctx.fanfic', 'ctx.systemPrompt', 'a read-only canon source + branch-state Provider at execution time'],
+    writes: ['tool/call', 'mutable branch state through the fanfic Provider', 'tool/result'],
+    async mount(ctx) {
+      // The tools inject `fanfic` and register from the seam alone; the schemas
+      // are provider-neutral, so the bare service suffices for the harvest. Every
+      // Config field is required with no default; the values mirror the shipped
+      // opt-in fanfic-authoring bundle patch (`packages/bundle/fanfic-authoring`).
+      await ctx.plugin(FanficRuntime)
+      await ctx.plugin(ToolFanfic, {
+        defaultSearchLimit: 6,
+        defaultContextExpansionLimit: 12,
+        defaultCharacterEvidenceLimit: 5,
+        defaultVoiceSampleLimit: 4,
+        defaultStyleSampleLimit: 4,
+        defaultAntiCopyMinPhraseChars: 24,
+        defaultAntiCopyMaxFindings: 6,
+        defaultPowerEvidenceLimit: 4,
+        defaultEnrichmentBatchSize: 4,
+        defaultStoryHorizonSize: 5,
+        maxAuditClaims: 32,
+      })
+    },
+    note:
+      'Opt-in fanfic authoring tools over `ctx.fanfic`, loaded only from the fanfic-authoring bundle patch (never a base composition). The 36 model-visible schemas are provider-neutral; a deployment supplies a canon pack and branch-state Provider (e.g. `@deepseek-ai/dsh-fanfic-local`) at execution time.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-terminal',

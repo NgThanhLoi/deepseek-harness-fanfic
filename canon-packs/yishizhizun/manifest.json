@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "canonPackId": "yishizhizun",
+  "source": {
+    "sha256": "760489c4ea428faa5d629fa0219ab7975424efa67d5e3b33dc8fc56d08224135",
+    "title": "一世之尊",
+    "creator": "爱潜水的乌贼"
+  },
+  "narrativeIndex": {
+    "kind": "epub-spine",
+    "chapterCount": 1409
+  },
+  "graphVersion": 1
+}

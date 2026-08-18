@@ -1,0 +1,46 @@
+# Opt-in fanfic authoring layer. Paths resolve from the process working directory unless overridden.
+- insert:
+    - id: fanfic
+      name: '@deepseek-ai/dsh-fanfic'
+
+    - id: fanfic-local
+      name: '@deepseek-ai/dsh-fanfic-local'
+      inject: [fanfic]
+      config:
+        providerId: local
+        canonPackDir: !!js process.env.DSH_FANFIC_CANON_PACK ?? './canon-packs/yishizhizun'
+        stateDir: !!js process.env.DSH_FANFIC_STATE_DIR ?? './.dsh-fanfic-state'
+        maxSearchResults: 12
+        maxExcerptChars: 1800
+        maxStructuredRecords: 64
+        authorContextMaxEntities: 12
+        authorContextSearchLimit: 8
+        authorContextCharacterLimit: 8
+        authorContextEvidenceLimit: 3
+        storyRecentSummaryLimit: 5
+        voiceDialogueFragmentLimit: 6
+        styleReferenceChapterLimit: 32
+        styleSampleExcerptChars: 700
+        antiCopyMaxDraftChars: 24000
+        antiCopyMaxFindings: 8
+        styleDeviationRatio: 0.7
+        styleRevisionRequiredRatio: 1.0
+        authorContextBranchRecordLimit: 24
+        authorContextSourceExcerptLimit: 2
+        authorContextMaxJsonChars: 40000
+
+    - id: tool-fanfic
+      name: '@deepseek-ai/dsh-tool-fanfic'
+      inject: [fanfic, tools, systemPrompt]
+      config:
+        defaultSearchLimit: 6
+        defaultContextExpansionLimit: 12
+        defaultCharacterEvidenceLimit: 5
+        defaultVoiceSampleLimit: 4
+        defaultStyleSampleLimit: 4
+        defaultAntiCopyMinPhraseChars: 24
+        defaultAntiCopyMaxFindings: 6
+        defaultPowerEvidenceLimit: 4
+        defaultEnrichmentBatchSize: 4
+        defaultStoryHorizonSize: 5
+        maxAuditClaims: 32

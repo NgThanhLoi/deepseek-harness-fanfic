@@ -25,6 +25,7 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-str-replace-editor` | `str_replace_editor` | `ctx.tools`, `ctx.fs` | `tool/call`, `fs/observed after view presence/absence, edit absence, or successful mutation`, `tool/result` | - | Standalone view/create/unique literal replace/line insert tool over the filesystem seam; it composes with any shell or terminal API. |
 | `@deepseek-ai/dsh-tool-fs` | `edit`, `read`, `read_image`, `write` | `ctx.tools`, `ctx.fs`, `ctx.systemPrompt`, `ctx.attachments (read_image registration)`, `ctx.llm + an image-capable route (read_image execution)` | `tool/call`, `fs/write-intent or fs/edit-intent for mutations`, `fs/observed after read presence/absence or successful file operation`, `durable attachment (read_image)`, `tool/result` | - | The read-before-write/edit policy is added by `@deepseek-ai/dsh-fs-observation-policy` (an `fs/*` event-gate plugin, no schema change); a deployment that loads these tools is expected to also load it. `read_image` is not registered without `ctx.attachments`; its schema is route-independent, and execution refuses unless the exact routed model declares image input. |
 | `@deepseek-ai/dsh-tool-fs-search` | `glob`, `grep` | `ctx.tools`, `ctx.subprocess`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | glob and grep are unconditional discovery tools that spawn the packaged ripgrep binary (`@vscode/ripgrep`) through ctx.subprocess as ordinary foreground calls (never background jobs) — no host `rg` install and no shell layer. The catalog uses `sampleOverCapGlobResults: true`; deployments must choose that behavior explicitly. Capped results save the complete formatted list through the optional ctx.spillStore backend; returned locators are follow-up-readable/searchable when the backend exposes local paths in co-located deployments. |
+| `@deepseek-ai/dsh-tool-fanfic` | `anti_copy_guard`, `author_context`, `canon_causality_trace`, `canon_chapter_read`, `canon_context_expand`, `canon_enrichment_checkpoint`, `canon_enrichment_commit`, `canon_enrichment_plan`, `canon_enrichment_progress`, `canon_enrichment_validate`, `canon_search`, `canon_snapshot`, `canon_timeline_context`, `character_intelligence`, `character_voice_context`, `fanfic_apply_delta`, `fanfic_audit`, `fanfic_branch_create`, `fanfic_branch_get`, `fanfic_branch_list`, `fanfic_chapter_state`, `fanfic_divergence_record`, `fanfic_impact_scan`, `fanfic_intent_update`, `fanfic_status`, `fanfic_style_audit`, `invention_upsert`, `mystery_truth_upsert`, `narrative_style_context`, `power_assess`, `story_arc_upsert`, `story_director_context`, `story_foreshadow_upsert`, `story_horizon_set`, `story_reconciliation_resolve`, `story_thread_upsert` | `ctx.tools`, `ctx.fanfic`, `ctx.systemPrompt`, `a read-only canon source + branch-state Provider at execution time` | `tool/call`, `mutable branch state through the fanfic Provider`, `tool/result` | - | Opt-in fanfic authoring tools over `ctx.fanfic`, loaded only from the fanfic-authoring bundle patch (never a base composition). The 36 model-visible schemas are provider-neutral; a deployment supplies a canon pack and branch-state Provider (e.g. `@deepseek-ai/dsh-fanfic-local`) at execution time. |
 | `@deepseek-ai/dsh-tool-terminal` | `terminal_close`, `terminal_list`, `terminal_open`, `terminal_read`, `terminal_send`, `terminal_signal` | `ctx.tools`, `ctx.terminals`, `ctx.systemPrompt`, `ctx.jobs at call time for run_in_background` | `tool/call`, `tool/result` | - | The six terminal tools are opt-in and complement one-shot shell/filesystem tools. `terminal_send(run_in_background: true)` registers with `ctx.jobs`; TUI, named key sequences, BEL, resize, auto-start, and cross-agent sharing are absent from the schema. |
 | `@deepseek-ai/dsh-tool-goal` | `create_goal`, `get_goal`, `update_goal` | `ctx.tools`, `ctx.agents`, `ctx.goals`, `ctx.systemPrompt`, `a calling Agent in an authorized open turn` | `tool/call`, `goal/change for mutations`, `tool/result` | - | create, edit, pause, and resume require direct-human root authority; complete and blocked also accept the exact current goal round. The default blocked lower bound is three admitted rounds. |
 | `@deepseek-ai/dsh-schedule` | `schedule_create`, `schedule_delete`, `schedule_list` | `ctx.tools`, `ctx.sessions`, `Session persistence`, `a future live root Agent` | `tool/call`, `schedule/change create or delete`, `tool/result` | - | Registered only inside live root Agent scopes created after the opt-in Schedule plugin loads. Version 1 accepts after_seconds, explicit absolute at, and bounded fixed-rate every_seconds, and discloses session-local delivery; management reads and mutations require the shared Session persistence barrier. |
@@ -772,6 +773,1940 @@ Search file contents with a ripgrep regular expression. Returns matching lines w
 Source: [`packages/fs/tool-fs-search/src/index.ts`](../packages/fs/tool-fs-search/src/index.ts)
 
 glob and grep are unconditional discovery tools that spawn the packaged ripgrep binary (`@vscode/ripgrep`) through ctx.subprocess as ordinary foreground calls (never background jobs) — no host `rg` install and no shell layer. The catalog uses `sampleOverCapGlobResults: true`; deployments must choose that behavior explicitly. Capped results save the complete formatted list through the optional ctx.spillStore backend; returned locators are follow-up-readable/searchable when the backend exposes local paths in co-located deployments.
+
+<a id="deepseek-aidsh-tool-fanfic"></a>
+
+## `@deepseek-ai/dsh-tool-fanfic`
+
+### `anti_copy_guard`
+
+Detect exact normalized phrase overlap between a draft and the entire immutable canon corpus. Future-source match locations remain hidden behind the spoiler cutoff.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "draft": {
+      "type": "string"
+    },
+    "asOfChapter": {
+      "type": "integer"
+    },
+    "branchId": {
+      "type": "string",
+      "description": "Optional branch UUID or unique branch name; required with fanficChapter to issue an anti-copy commit receipt."
+    },
+    "fanficChapter": {
+      "type": "integer"
+    },
+    "minPhraseChars": {
+      "type": "integer"
+    },
+    "maxFindings": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "draft",
+    "asOfChapter"
+  ]
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+### `author_context`
+
+Compose the scene packet a fanfic planner/writer should use: established canon truth, POV epistemics, source evidence, divergence policy, optional branch overlay, and workflow constraints.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "asOfChapter": {
+      "type": "integer"
+    },
+    "povCharacter": {
+      "type": "string"
+    },
+    "participants": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "sceneGoal": {
+      "type": "string"
+    },
+    "query": {
+      "type": "string"
+    },
+    "branchId": {
+      "type": "string"
+    },
+    "fanficChapter": {
+      "type": "integer"
+    },
+    "storyHorizonSize": {
+      "type": "integer",
+      "description": "Rolling Director horizon; defaults to 5."
+    },
+    "styleMode": {
+      "type": "string",
+      "enum": [
+        "auto",
+        "jianghu",
+        "mystery",
+        "reincarnation-mission",
+        "banter-introspection",
+        "combat",
+        "high-level-strategy",
+        "cosmology-philosophy",
+        "exposition",
+        "ensemble-rumor",
+        "emotional"
+      ]
+    },
+    "styleSampleLimit": {
+      "type": "integer",
+      "description": "Narrative style evidence windows; defaults to 4."
+    }
+  },
+  "required": [
+    "asOfChapter",
+    "povCharacter",
+    "sceneGoal"
+  ]
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+### `canon_causality_trace`
+
+Search source-backed canonical cause/effect links that had been established by a narrative cutoff. Use this after a divergence to identify dependencies that may no longer hold.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string"
+    },
+    "asOfChapter": {
+      "type": "integer"
+    },
+    "limit": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "query",
+    "asOfChapter"
+  ]
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+### `canon_chapter_read`
+
+Read one exact canon chapter only when it is at or before the caller-supplied spoiler cutoff.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "chapter": {
+      "type": "integer"
+    },
+    "asOfChapter": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "chapter",
+    "asOfChapter"
+  ]
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+### `canon_context_expand`
+
+Discover spoiler-safe graph-adjacent entities that may matter to a scene even when the initial prompt did not name them.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "asOfChapter": {
+      "type": "integer"
+    },
+    "seeds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "query": {
+      "type": "string"
+    },
+    "maxEntities": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "asOfChapter",
+    "seeds"
+  ]
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+### `canon_enrichment_checkpoint`
+
+Mark one chapter and structured record family reviewed after all accepted records for that pass have been committed. Referenced record ids must exist and be sourced from that exact chapter; use noFindings only after an actual review found nothing worth admitting.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "chapter": {
+      "type": "integer"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "fact",
+        "knowledge",
+        "character",
+        "identity",
+        "power",
+        "relationship",
+        "mystery",
+        "event",
+        "timeline-rule",
+        "causal-link"
+      ]
+    },
+    "recordIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "noFindings": {
+      "type": "boolean"
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "chapter",
+    "kind",
+    "noFindings"
+  ]
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+### `canon_enrichment_commit`
+
+Commit a previously token-validated structured canon record into the local verified enrichment overlay. The immutable base canon pack is never modified.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "token": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "fact",
+        "knowledge",
+        "character",
+        "identity",
+        "power",
+        "relationship",
+        "mystery",
+        "event",
+        "timeline-rule",
+        "causal-link"
+      ]
+    },
+    "chapter": {
+      "type": "integer"
+    },
+    "evidence": {
+      "type": "string"
+    },
+    "rationale": {
+      "type": "string"
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {}
+    }
+  },
+  "required": [
+    "token",
+    "kind",
+    "chapter",
+    "evidence",
+    "payload"
+  ]
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+### `canon_enrichment_plan`
+
+Return the next source chapters whose selected structured record families have not been reviewed. This is a deterministic work queue for LLM-driven canon digestion.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "fromChapter": {
+      "type": "integer"
+    },
+    "toChapter": {
+      "type": "integer"
+    },
+    "kinds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "fact",
+          "knowledge",
+          "character",
+          "identity",
+          "power",
+          "relationship",
+          "mystery",
+          "event",
+          "timeline-rule",
+          "causal-link"
+        ]
+      }
+    },
+    "batchSize": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "fromChapter",
+    "toChapter",
+    "kinds"
+  ]
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+### `canon_enrichment_progress`
+
+Inspect effective chapter × record-family enrichment coverage so already-reviewed source units are not repeatedly digested.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "fromChapter": {
+      "type": "integer"
+    },
+    "toChapter": {
+      "type": "integer"
+    },
+    "kinds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "fact",
+          "knowledge",
+          "character",
+          "identity",
+          "power",
+          "relationship",
+          "mystery",
+          "event",
+          "timeline-rule",
+          "causal-link"
+        ]
+      }
+    }
+  },
+  "required": [
+    "fromChapter",
+    "toChapter",
+    "kinds"
+  ]
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+### `canon_enrichment_validate`
+
+Validate a proposed structured canon record against an exact immutable chapter excerpt. Returns a token only when evidence and record structure validate.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": [
+        "fact",
+        "knowledge",
+        "character",
+        "identity",
+        "power",
+        "relationship",
+        "mystery",
+        "event",
+        "timeline-rule",
+        "causal-link"
+      ]
+    },
+    "chapter": {
+      "type": "integer"
+    },
+    "evidence": {
+      "type": "string"
+    },
+    "rationale": {
+      "type": "string"
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {}
+    }
+  },
+  "required": [
+    "kind",
+    "chapter",
+    "evidence",
+    "payload"
+  ]
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+### `canon_search`
+
+Search immutable canon source text up to an explicit narrative chapter cutoff. Future chapters are excluded before ranking.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "description": "Names, techniques, events, or phrases to find."
+    },
+    "asOfChapter": {
+      "type": "integer",
+      "description": "Maximum canon narrative chapter the result may use."
+    },
+    "limit": {
+      "type": "integer",
+      "description": "Maximum hits; defaults to 6."
+    }
+  },
+  "required": [
+    "query",
+    "asOfChapter"
+  ]
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+### `canon_snapshot`
+
+Build a structured spoiler-safe canon snapshot: temporal facts, POV knowledge, identities, powers, relationships, mysteries, events, and bounded source evidence.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "asOfChapter": {
+      "type": "integer"
+    },
+    "povCharacter": {
+      "type": "string"
+    },
+    "entities": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "query": {
+      "type": "string"
+    },
+    "searchLimit": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "asOfChapter"
+  ]
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+### `canon_timeline_context`
+
+Query spoiler-safe timeline/worldline rules, relevant events, revealed identities, and source evidence at one canon cutoff.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "asOfChapter": {
+      "type": "integer"
+    },
+    "worldline": {
+      "type": "string"
+    },
+    "query": {
+      "type": "string"
+    },
+    "entities": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "limit": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "asOfChapter"
+  ]
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+### `character_intelligence`
+
+Build a cutoff-safe character dossier from temporal state, identities, powers, relationships, epistemics, branch overlays, and source evidence. Missing data is reported as gaps rather than invented.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "character": {
+      "type": "string"
+    },
+    "asOfChapter": {
+      "type": "integer"
+    },
+    "povCharacter": {
+      "type": "string"
+    },
+    "branchId": {
+      "type": "string"
+    },
+    "fanficChapter": {
+      "type": "integer"
+    },
+    "evidenceLimit": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "character",
+    "asOfChapter"
+  ]
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+### `character_voice_context`
+
+Retrieve bounded source-backed dialogue/voice evidence around a character at a canon cutoff plus any structured voice notes. Contextual snippets do not assert exact speaker attribution; verify ambiguous fragments with canon_chapter_read.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "character": {
+      "type": "string"
+    },
+    "asOfChapter": {
+      "type": "integer"
+    },
+    "limit": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "character",
+    "asOfChapter"
+  ]
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+### `fanfic_apply_delta`
+
+Transactional accepted-chapter commit. Requires passing canon/style/anti-copy receipts for the exact draft. New chapters persist structured state; rewrites explicitly inherit or replace the prior active chapter version.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "branchId": {
+      "type": "string",
+      "description": "Branch UUID or unique branch name."
+    },
+    "expectedRevision": {
+      "type": "integer"
+    },
+    "fanficChapter": {
+      "type": "integer"
+    },
+    "draft": {
+      "type": "string",
+      "description": "Exact accepted prose that produced the audit receipts."
+    },
+    "auditReceiptIds": {
+      "type": "array",
+      "description": "Exactly three receipts from fanfic_audit, fanfic_style_audit, and anti_copy_guard for this draft/revision.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "rewriteMode": {
+      "type": "string",
+      "description": "Required only when rewriting an existing chapter. inherit carries prior structured state; replace discards it.",
+      "enum": [
+        "inherit",
+        "replace"
+      ]
+    },
+    "dropInheritedRecordIds": {
+      "type": "array",
+      "description": "When rewriteMode=inherit, old chapter record ids to omit from the inherited state.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "confirmDroppedState": {
+      "type": "boolean",
+      "description": "Required true when rewriteMode=replace would discard active structured state."
+    },
+    "chapterSummary": {
+      "type": "string"
+    },
+    "facts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "subject": {
+            "type": "string"
+          },
+          "predicate": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string"
+          },
+          "validFromFanficChapter": {
+            "type": "integer"
+          },
+          "validUntilFanficChapter": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "subject",
+          "predicate",
+          "object",
+          "validFromFanficChapter"
+        ]
+      }
+    },
+    "knowledge": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "character": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "predicate": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "stance": {
+            "type": "string",
+            "enum": [
+              "knows",
+              "suspects",
+              "believes-false"
+            ]
+          },
+          "fromFanficChapter": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "character",
+          "summary",
+          "stance",
+          "fromFanficChapter"
+        ]
+      }
+    },
+    "characterStates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "character": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "fromFanficChapter": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "character",
+          "summary",
+          "fromFanficChapter"
+        ]
+      }
+    },
+    "relationships": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "subject": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "fromFanficChapter": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "subject",
+          "object",
+          "summary",
+          "fromFanficChapter"
+        ]
+      }
+    },
+    "causalThreads": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "summary": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "resolved"
+            ]
+          },
+          "fromFanficChapter": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "summary",
+          "status",
+          "fromFanficChapter"
+        ]
+      }
+    },
+    "resolveCausalThreadIds": {
+      "type": "array",
+      "description": "Existing branch causal-thread ids to mark resolved by this accepted chapter.",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "branchId",
+    "expectedRevision",
+    "fanficChapter",
+    "draft",
+    "auditReceiptIds"
+  ]
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+### `fanfic_audit`
+
+Run deterministic spoiler/reveal checks and validate structured knowledge, identity, canon-fact, and power claims against the current canon snapshot. Missing graph data yields warnings, not invented facts.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "draft": {
+      "type": "string"
+    },
+    "asOfChapter": {
+      "type": "integer"
+    },
+    "povCharacter": {
+      "type": "string"
+    },
+    "branchId": {
+      "type": "string"
+    },
+    "fanficChapter": {
+      "type": "integer",
+      "description": "Fanfic chapter being audited; state from this chapter and later is hidden so rewrites cannot self-justify."
+    },
+    "participants": {
+      "type": "array",
+      "description": "Scene participants used by the independent claim extractor.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "knowledge",
+              "canon-fact",
+              "identity",
+              "power"
+            ]
+          },
+          "subject": {
+            "type": "string"
+          },
+          "predicate": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "subject"
+        ]
+      }
+    }
+  },
+  "required": [
+    "draft",
+    "asOfChapter",
+    "povCharacter"
+  ]
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+### `fanfic_branch_create`
+
+Create an isolated mutable fanfic branch at a canon starting chapter. Original canon remains immutable.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "baseChapter": {
+      "type": "integer"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "premise": {
+      "type": "string"
+    },
+    "divergenceMode": {
+      "type": "string",
+      "enum": [
+        "canon-compliant",
+        "soft-divergence",
+        "hard-au"
+      ]
+    }
+  },
+  "required": [
+    "name",
+    "baseChapter"
+  ]
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+### `fanfic_branch_get`
+
+Read the full administrative branch snapshot, including later fanfic state. Do not use this as scene context; use author_context with fanficChapter to avoid fanfic-future leakage.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "branchId": {
+      "type": "string",
+      "description": "Branch UUID or unique branch name."
+    }
+  },
+  "required": [
+    "branchId"
+  ]
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+### `fanfic_branch_list`
+
+List existing local fanfic branches and their latest revisions.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+### `fanfic_chapter_state`
+
+Inspect the active structured state owned by one fanfic chapter version. Use this before a rewrite to decide what to inherit, drop, or replace without fetching the entire branch.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "branchId": {
+      "type": "string",
+      "description": "Branch UUID or unique branch name."
+    },
+    "fanficChapter": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "branchId",
+    "fanficChapter"
+  ]
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+### `fanfic_divergence_record`
+
+Record the event where a branch stops following canon. Requires the latest branch revision so concurrent writers cannot overwrite each other.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "branchId": {
+      "type": "string",
+      "description": "Branch UUID or unique branch name."
+    },
+    "expectedRevision": {
+      "type": "integer"
+    },
+    "atChapter": {
+      "type": "integer"
+    },
+    "eventOrdinal": {
+      "type": "integer",
+      "description": "Optional 1-based canon event order within the chapter; use for mid-chapter divergence."
+    },
+    "afterEventId": {
+      "type": "string",
+      "description": "Optional structured canon event id after which divergence begins."
+    },
+    "sceneId": {
+      "type": "string"
+    },
+    "summary": {
+      "type": "string"
+    },
+    "immediateConsequences": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "openQuestions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "branchId",
+    "expectedRevision",
+    "atChapter",
+    "summary"
+  ]
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+### `fanfic_impact_scan`
+
+Scan source-backed causal links, dependent canon events, graph-adjacent entities, and current branch causal threads for a proposed divergence. This is dependency discovery, not future prophecy.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "asOfChapter": {
+      "type": "integer"
+    },
+    "summary": {
+      "type": "string"
+    },
+    "entities": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "branchId": {
+      "type": "string"
+    },
+    "fanficChapter": {
+      "type": "integer"
+    },
+    "limit": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "asOfChapter",
+    "summary"
+  ]
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+### `fanfic_intent_update`
+
+Replace the branch author intent with compare-and-set revision. This is project policy for premise, divergence mode, themes, tone, POV, character priorities, forbidden outcomes, and style notes.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "branchId": {
+      "type": "string",
+      "description": "Branch UUID or unique branch name."
+    },
+    "expectedRevision": {
+      "type": "integer"
+    },
+    "premise": {
+      "type": "string"
+    },
+    "divergenceMode": {
+      "type": "string",
+      "enum": [
+        "canon-compliant",
+        "soft-divergence",
+        "hard-au"
+      ]
+    },
+    "themes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "tone": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "povPolicy": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "characterPriorities": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "forbiddenOutcomes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "styleNotes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "branchId",
+    "expectedRevision",
+    "premise",
+    "divergenceMode"
+  ]
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+### `fanfic_status`
+
+Inspect the active canon pack, structured graph counts, and branch-state directory.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+### `fanfic_style_audit`
+
+Audit a draft against high-level work-style metrics for the selected scene mode and run the corpus-wide anti-copy guard. Style drift is advisory; exact source overlap should be rewritten.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "draft": {
+      "type": "string"
+    },
+    "asOfChapter": {
+      "type": "integer"
+    },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "auto",
+        "jianghu",
+        "mystery",
+        "reincarnation-mission",
+        "banter-introspection",
+        "combat",
+        "high-level-strategy",
+        "cosmology-philosophy",
+        "exposition",
+        "ensemble-rumor",
+        "emotional"
+      ]
+    },
+    "query": {
+      "type": "string"
+    },
+    "povCharacter": {
+      "type": "string"
+    },
+    "participants": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "branchId": {
+      "type": "string"
+    },
+    "fanficChapter": {
+      "type": "integer"
+    },
+    "sampleLimit": {
+      "type": "integer"
+    },
+    "antiCopyMinPhraseChars": {
+      "type": "integer"
+    },
+    "antiCopyMaxFindings": {
+      "type": "integer"
+    },
+    "targetMinHanChars": {
+      "type": "integer",
+      "description": "Optional minimum Han-character count for the accepted chapter."
+    },
+    "targetMaxHanChars": {
+      "type": "integer",
+      "description": "Optional maximum Han-character count for the accepted chapter."
+    }
+  },
+  "required": [
+    "draft",
+    "asOfChapter"
+  ]
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+### `invention_upsert`
+
+Register a fanfic-original artifact, technique, organization, mechanism, character, or location with stable capabilities, constraints, costs, source, and canon-compatibility notes.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "branchId": {
+      "type": "string",
+      "description": "Branch UUID or unique branch name."
+    },
+    "expectedRevision": {
+      "type": "integer"
+    },
+    "invention": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "artifact",
+            "technique",
+            "organization",
+            "mechanism",
+            "character",
+            "location",
+            "other"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "originFanficChapter": {
+          "type": "integer"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "constraints": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "costs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "powerSource": {
+          "type": "string"
+        },
+        "owner": {
+          "type": "string"
+        },
+        "canonCompatibility": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "relatedThreads": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "name",
+        "originFanficChapter",
+        "summary",
+        "powerSource"
+      ]
+    }
+  },
+  "required": [
+    "branchId",
+    "expectedRevision",
+    "invention"
+  ]
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+### `mystery_truth_upsert`
+
+Persist the author-only truth behind a fanfic-original mystery. This is writer metadata and MUST NOT be treated as POV knowledge.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "branchId": {
+      "type": "string",
+      "description": "Branch UUID or unique branch name."
+    },
+    "expectedRevision": {
+      "type": "integer"
+    },
+    "mysteryTruth": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "planned",
+            "active",
+            "revealed",
+            "retired"
+          ]
+        },
+        "label": {
+          "type": "string"
+        },
+        "secretTruth": {
+          "type": "string"
+        },
+        "mechanism": {
+          "type": "string"
+        },
+        "allowedClues": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "falseLeads": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "revealConditions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "plannedPayoff": {
+          "type": "string"
+        },
+        "relatedThreads": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "label",
+        "secretTruth",
+        "mechanism",
+        "plannedPayoff"
+      ]
+    }
+  },
+  "required": [
+    "branchId",
+    "expectedRevision",
+    "mysteryTruth"
+  ]
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+### `narrative_style_context`
+
+Retrieve spoiler-safe, work-level narrative rhythm guidance for a scene mode. Returns aggregate metrics and bounded evidence windows; it is not an instruction to imitate a living author exactly or copy source wording.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "asOfChapter": {
+      "type": "integer"
+    },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "auto",
+        "jianghu",
+        "mystery",
+        "reincarnation-mission",
+        "banter-introspection",
+        "combat",
+        "high-level-strategy",
+        "cosmology-philosophy",
+        "exposition",
+        "ensemble-rumor",
+        "emotional"
+      ]
+    },
+    "query": {
+      "type": "string"
+    },
+    "povCharacter": {
+      "type": "string"
+    },
+    "participants": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "branchId": {
+      "type": "string"
+    },
+    "fanficChapter": {
+      "type": "integer"
+    },
+    "sampleLimit": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "asOfChapter"
+  ]
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+### `power_assess`
+
+Assess source-backed capability constraints for one or more actors at a canon cutoff. It deliberately does not infer a deterministic winner from realm labels.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "actors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "asOfChapter": {
+      "type": "integer"
+    },
+    "scenario": {
+      "type": "string"
+    },
+    "branchId": {
+      "type": "string"
+    },
+    "fanficChapter": {
+      "type": "integer"
+    },
+    "evidenceLimit": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "actors",
+    "asOfChapter"
+  ]
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+### `story_arc_upsert`
+
+Create or replace one Story Director arc using an explicit schema and compare-and-set branch revision.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "branchId": {
+      "type": "string",
+      "description": "Branch UUID or unique branch name."
+    },
+    "expectedRevision": {
+      "type": "integer"
+    },
+    "arc": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "planned",
+            "active",
+            "completed",
+            "abandoned"
+          ]
+        },
+        "objective": {
+          "type": "string"
+        },
+        "centralConflict": {
+          "type": "string"
+        },
+        "themes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "characters": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "startFanficChapter": {
+          "type": "integer"
+        },
+        "targetEndFanficChapter": {
+          "type": "integer"
+        },
+        "plannedPayoffs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "status",
+        "objective",
+        "centralConflict"
+      ]
+    }
+  },
+  "required": [
+    "branchId",
+    "expectedRevision",
+    "arc"
+  ]
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+### `story_director_context`
+
+Build the compact long-form planning packet for a branch: active arcs, prioritized threads, due promises, live foreshadows, rolling chapter horizon, recent summaries, unresolved divergence consequences, and deterministic attention items.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "branchId": {
+      "type": "string",
+      "description": "Branch UUID or unique branch name."
+    },
+    "fanficChapter": {
+      "type": "integer"
+    },
+    "horizonSize": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "branchId",
+    "fanficChapter"
+  ]
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+### `story_foreshadow_upsert`
+
+Create or replace one foreshadow/payoff promise with explicit reveal timing metadata.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "branchId": {
+      "type": "string",
+      "description": "Branch UUID or unique branch name."
+    },
+    "expectedRevision": {
+      "type": "integer"
+    },
+    "foreshadow": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "planned",
+            "planted",
+            "paid-off",
+            "retired"
+          ]
+        },
+        "clue": {
+          "type": "string"
+        },
+        "payoff": {
+          "type": "string"
+        },
+        "relatedThreads": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "plantedFanficChapter": {
+          "type": "integer"
+        },
+        "targetFanficChapter": {
+          "type": "integer"
+        },
+        "payoffFanficChapter": {
+          "type": "integer"
+        },
+        "subtlety": {
+          "type": "string",
+          "enum": [
+            "background",
+            "noticeable",
+            "explicit"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "clue",
+        "payoff",
+        "subtlety"
+      ]
+    }
+  },
+  "required": [
+    "branchId",
+    "expectedRevision",
+    "foreshadow"
+  ]
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+### `story_horizon_set`
+
+Replace the rolling 3–5 chapter horizon with explicitly validated chapter plans.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "branchId": {
+      "type": "string",
+      "description": "Branch UUID or unique branch name."
+    },
+    "expectedRevision": {
+      "type": "integer"
+    },
+    "horizon": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "fanficChapter": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "planned",
+              "drafted",
+              "accepted"
+            ]
+          },
+          "goal": {
+            "type": "string"
+          },
+          "pov": {
+            "type": "string"
+          },
+          "beats": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "advanceThreads": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "plantForeshadows": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "payoffForeshadows": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "constraints": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "fanficChapter",
+          "status",
+          "goal",
+          "pov"
+        ]
+      }
+    }
+  },
+  "required": [
+    "branchId",
+    "expectedRevision",
+    "horizon"
+  ]
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+### `story_reconciliation_resolve`
+
+Mark one Story Director reconciliation issue resolved after the affected horizon/thread/foreshadow/arc metadata has been reviewed and updated.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "branchId": {
+      "type": "string",
+      "description": "Branch UUID or unique branch name."
+    },
+    "expectedRevision": {
+      "type": "integer"
+    },
+    "reconciliationId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "branchId",
+    "expectedRevision",
+    "reconciliationId"
+  ]
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+### `story_thread_upsert`
+
+Create or replace one plot/character/mystery/relationship/theme thread with explicit fields.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "branchId": {
+      "type": "string",
+      "description": "Branch UUID or unique branch name."
+    },
+    "expectedRevision": {
+      "type": "integer"
+    },
+    "thread": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "plot",
+            "character",
+            "mystery",
+            "relationship",
+            "theme"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "open",
+            "dormant",
+            "resolved",
+            "abandoned"
+          ]
+        },
+        "priority": {
+          "type": "integer"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "entities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "openedFanficChapter": {
+          "type": "integer"
+        },
+        "targetFanficChapter": {
+          "type": "integer"
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "resolutionCriteria": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "status",
+        "priority",
+        "summary",
+        "openedFanficChapter"
+      ]
+    }
+  },
+  "required": [
+    "branchId",
+    "expectedRevision",
+    "thread"
+  ]
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+Opt-in fanfic authoring tools over `ctx.fanfic`, loaded only from the fanfic-authoring bundle patch (never a base composition). The 36 model-visible schemas are provider-neutral; a deployment supplies a canon pack and branch-state Provider (e.g. `@deepseek-ai/dsh-fanfic-local`) at execution time.
 
 <a id="deepseek-aidsh-tool-terminal"></a>
 
