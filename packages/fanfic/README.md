@@ -8,12 +8,18 @@ The fanfic group is an opt-in authoring capability family. It keeps immutable so
 |---|---|---|
 | `@deepseek-ai/dsh-fanfic` | Service Definition and provider selection | `ctx.fanfic` |
 | `@deepseek-ai/dsh-fanfic-local` | Filesystem canon-pack + branch Provider | — |
-| `@deepseek-ai/dsh-tool-fanfic` | Model-facing Consumer and workflow policy | — |
+| `@deepseek-ai/dsh-tool-fanfic` | Direct model-facing authoring Consumer and workflow policy | — |
+| `@deepseek-ai/dsh-tool-fanfic-distributed` | Distributed read-only specialist orchestration Consumer | — |
 
-`@deepseek-ai/dsh-fanfic-authoring` in `packages/bundle/` composes all three without modifying shipped base profiles.
+`@deepseek-ai/dsh-fanfic-authoring` in `packages/bundle/` composes all four without modifying shipped base profiles.
 
 The local stack now supports graph-based context expansion, character/voice/power/timeline/causality intelligence, token-bound enrichment, a persistent chapter×record-family enrichment coverage ledger, and durable Story Director state for arcs, threads, foreshadows, and a rolling chapter horizon. A connected LLM can therefore improve structured canon incrementally and manage long-form narrative promises without modifying the immutable source pack.
 
 ## v0.7 quality-enforced author layer
 
 Live endurance testing moved the next failure class from state correctness into quality correctness. v0.7 adds a durable Writing Contract, a staged Draft Store, deterministic prose-degeneration blocking, enforceable original-mystery reveal conditions, measured Author Context telemetry, and an active-state-aware review exporter. The v0.6 transactional rewrite/receipt/Director guarantees remain in place. See `FANFIC_AUTHOR_BRAIN_WORKFLOW.md` for the operating protocol.
+
+
+## v0.8 distributed Author Brain
+
+v0.8 keeps one parent Author Agent authoritative while `fanfic_prepare_chapter` distributes canon, character, and story analysis through read-only `ctx.subagents` specialists, and `fanfic_review_draft` can route an independent critic after staging prose. Worker pools can use different child model/provider routes with ordered fallback, cooldown, bounded structured packets, and branch/draft-sensitive caching. Rate-limit relief requires deployment workers backed by independent quotas; specialists never gain branch mutation or settlement authority.

@@ -86,7 +86,7 @@ for chapter N:
    ↓
   plan → write → exact-final fanfic_audit + fanfic_style_audit + anti_copy_guard
    ↓ three passing receipts
-  fanfic_apply_delta(N, exact draft, receipts)
+  fanfic_apply_delta(N, draftId, receipts)
     - persist accepted facts/knowledge/state transactionally
     - resolve causal-thread ids actually settled
     - matching horizon plan auto-becomes accepted
@@ -138,9 +138,9 @@ python scripts/fanfic/build_style_bank.py canon-packs/yishizhizun
 
 Runtime retrieval still enforces `asOfChapter` before selecting style references. Anti-copy checking intentionally scans the complete corpus, including future chapters, because its job is to catch memorized wording; matches after the cutoff are reported without a source chapter number.
 
-## 9. v0.7 staged draft, quality gate, and transactional settlement
+## 9. v0.8 distributed + transactional authoring
 
-Run `fanfic_status` first and require tool API `0.7.0`, branch format `3`, and author-context version `4`. Prefer a unique branch name in model-authored calls.
+Run `fanfic_status` first and require tool API `0.8.0`, branch format `3`, and author-context version `4`. Prefer a unique branch name in model-authored calls.
 
 A branch has a durable Writing Contract; defaults are Chinese prose, 2500–4000 Han characters, and automatic scene-style mode. Before settlement:
 
@@ -170,3 +170,28 @@ node scripts/fanfic/export_live_review.mjs \
 ```
 
 Optionally add pre-redacted `--sessions-dir` and `--contexts-dir`. The exporter produces an active-state-aware `REVIEW_MANIFEST.json` rather than relying on hand-counted report arithmetic.
+
+
+## 10. Distribute specialist workload across model/provider quotas
+
+The bundle now mounts `@deepseek-ai/dsh-tool-fanfic-distributed`. With no extra configuration, its canon/character/story/critic workers use the in-process `spawn` subagent provider and inherit the Author model. That is useful for role isolation and parallelism but does not reduce one provider key's quota pressure.
+
+To distribute real rate-limit load, set `DSH_FANFIC_WORKERS_JSON` before launch. Each row names a specialist role and can override the child LLM route independently:
+
+```bash
+export DSH_FANFIC_WORKERS_JSON='[
+  {"name":"canon-a","role":"canon","subagentProvider":"spawn","priority":1,"agentOptions":{"provider":"route-a","model":"fast-research","maxTokens":10000}},
+  {"name":"canon-b","role":"canon","subagentProvider":"spawn","priority":2,"agentOptions":{"provider":"route-b","model":"fallback-research","maxTokens":10000}},
+  {"name":"character-a","role":"character","subagentProvider":"spawn","priority":1,"agentOptions":{"provider":"route-b","model":"reasoning-medium","maxTokens":12000}},
+  {"name":"story-a","role":"story","subagentProvider":"spawn","priority":1,"agentOptions":{"provider":"route-c","model":"reasoning-medium","maxTokens":12000}},
+  {"name":"critic-a","role":"critic","subagentProvider":"spawn","priority":1,"agentOptions":{"provider":"route-d","model":"independent-critic","maxTokens":10000}}
+]'
+```
+
+At session start, call both `fanfic_status` and `fanfic_worker_status`. Before a substantial chapter plan, call `fanfic_prepare_chapter`; it runs canon/character/story specialists in parallel, tries fallback workers after retryable failures, and returns bounded structured packets. After staging prose, `fanfic_review_draft` may request independent critique. The parent Author remains the only writer/decision maker and the only actor allowed to mutate Director/branch state or settle a chapter.
+
+Run the keyless router regression after a build/type emit:
+
+```bash
+node scripts/fanfic/distributed_router_smoke.mjs
+```

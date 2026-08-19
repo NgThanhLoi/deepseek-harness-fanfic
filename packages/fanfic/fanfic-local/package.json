@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-fanfic-local",
   "description": "Local filesystem canon-pack and branch provider for DeepSeek Harness fanfic authoring",
-  "version": "0.1.0-rc.5",
+  "version": "0.1.0-rc.7",
   "publishConfig": {
     "access": "public"
   },

@@ -49,3 +49,18 @@
         defaultEnrichmentBatchSize: 4
         defaultStoryHorizonSize: 5
         maxAuditClaims: 32
+
+    - id: tool-fanfic-distributed
+      name: '@deepseek-ai/dsh-tool-fanfic-distributed'
+      inject: [fanfic, subagents, tools, systemPrompt]
+      config:
+        # Set DSH_FANFIC_WORKERS_JSON to distribute roles across independent model/provider quotas.
+        # Without it, specialists inherit the Author model while preserving role isolation and parallelism.
+        workers: !!js JSON.parse(process.env.DSH_FANFIC_WORKERS_JSON ?? '[{"name":"canon-default","role":"canon","subagentProvider":"spawn","priority":100},{"name":"character-default","role":"character","subagentProvider":"spawn","priority":100},{"name":"story-default","role":"story","subagentProvider":"spawn","priority":100},{"name":"critic-default","role":"critic","subagentProvider":"spawn","priority":100}]')
+        failureCooldownMs: 60000
+        maxAttemptsPerRole: 3
+        maxParallelSpecialists: 3
+        cacheTtlMs: 300000
+        maxCacheEntries: 64
+        packetMaxChars: 12000
+        resultMaxChars: 40000

@@ -22,9 +22,9 @@
 
 所有随部署变化的默认值都由显式 Cordis 配置提供：源码搜索上限、上下文扩展规模、人物证据数量、voice/style 样本数量、anti-copy 短语与 finding 默认值、战力证据数量、enrichment 批大小、Story Director horizon 大小以及单次审计 claim 上限。随附的 `fanfic-authoring` bundle 提供保守默认值；profile 可以覆盖它们而无需修改工具代码。`limit`、`maxEntities`、`batchSize`、`horizonSize` 等逐调用参数可覆盖默认值，但仍受 Provider 硬上限约束。
 
-## v0.7 质量强制作者工作流
+## v0.8 分布式感知作者工作流
 
-工具 API 版本为 `0.7.0`，branch format 为 `3`，author-context 版本为 `4`。最终正文只暂存一次并用 `draftId` 引用；更新暂存稿会改变 hash/revision，使旧 receipt 立即失效。分支 Writing Contract 是硬接受条件，因此暂存稿 style audit 总会执行持久的汉字长度范围，caller 不能用更宽松的临时参数绕过。
+工具 API 版本为 `0.8.0`，branch format 为 `3`，author-context 版本为 `4`。 可选的同级 `@deepseek-ai/dsh-tool-fanfic-distributed` 可把 canon/character/story 准备与 draft critique 分发给只读 subagent；本包的 39 个直接工具仍是唯一 mutation/audit surface。最终正文只暂存一次并用 `draftId` 引用；更新暂存稿会改变 hash/revision，使旧 receipt 立即失效。分支 Writing Contract 是硬接受条件，因此暂存稿 style audit 总会执行持久的汉字长度范围，caller 不能用更宽松的临时参数绕过。
 
 `fanfic_style_audit` 新增 Provider 可配置的 Prose Quality Guard，检测连续超短段、结尾塌缩、重复句、汉字 bigram 多样性塌缩以及 filler/padding 节奏；`revision-required` 不能产生 commit receipt。原创谜题真相也从“作者记忆”升级为约束：`mystery_truth_upsert` 保存 protected reveal terms 与 reveal conditions；完整揭示必须声明已满足的注册条件，并给出确实存在于 staged draft 的短 evidence excerpt；计划 payoff 的 settlement 还必须获得 canon audit 授权。
 
@@ -41,9 +41,11 @@
 ##### Fanfic 创作政策
 
 ```markdown
-Fanfic authoring policy (tool API 0.7.0):
-- At the start of a live authoring run, call fanfic_status. If toolApiVersion is missing or not 0.7.0, STOP: the runtime bundle is stale and must be rebuilt before writing.
+Fanfic authoring policy (tool API 0.8.0):
+- At the start of a live authoring run, call fanfic_status. If toolApiVersion is missing or not 0.8.0, STOP: the runtime bundle is stale and must be rebuilt before writing.
+- If your current task explicitly identifies you as a read-only distributed specialist child, follow that specialist task instead of the Author settlement workflow below: use only the tools visible in your child scope, do not write final chapter prose, and never attempt author-state mutation.
 - Before planning or writing a scene, call author_context with the exact canon cutoff, POV, participants, scene goal, and branch when one exists; for a branch, always pass the fanficChapter being written.
+- When fanfic_prepare_chapter is available, use it before substantial chapter planning to delegate canon/character/story analysis to read-only specialists; you remain the sole Author and must reconcile their advice against author_context. After staging prose, fanfic_review_draft may add independent critique but never replaces deterministic audits.
 - Treat canonTruth as binding established history. After a recorded divergence, canonReference is counterfactual reference only; never force later canon events back onto the branch.
 - Never use source material after the requested canon cutoff. Do not turn suspicion, reader knowledge, or hidden canon truth into POV knowledge without evidence.
 - Prefer character motivation, ideology, relationships, and known capabilities over plot railroading. Read branch authorIntent as the project-level premise/theme/tone policy. Use character_intelligence and power_assess when a scene depends on characterization or combat feasibility; use character_voice_context before dialogue-heavy scenes when voice fidelity matters.

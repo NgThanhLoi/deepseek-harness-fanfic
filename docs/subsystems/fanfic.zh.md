@@ -4,7 +4,7 @@
 
 `ctx.fanfic`（[`@deepseek-ai/dsh-fanfic`](../../packages/fanfic/fanfic)）是选择启用的同人写作 seam：不可变的原作正典加上可变的作者分支，提供防剧透查询、可验证的结构化补全与事务化章节结算。它只能通过 [fanfic-authoring bundle patch](../../packages/bundle/fanfic-authoring) 加载，绝不会出现在基础组合中。
 
-[包 README](../../packages/fanfic/fanfic/README.md) 负责组合与服务配置，[`@deepseek-ai/dsh-fanfic-local`](../../packages/fanfic/fanfic-local/README.md) 负责基于随附 [《一世之尊》正典包](../../canon-packs/yishizhizun) 的仓库内提供方，39 个面向模型的工具收录在[工具 Schema 目录](../tool-catalog.md#deepseek-aidsh-tool-fanfic)。下面由生成器产出的 Cordis API 记录面向提供方的分派服务契约，是每个操作的方法级权威。
+[包 README](../../packages/fanfic/fanfic/README.md) 负责组合与服务配置，[`@deepseek-ai/dsh-fanfic-local`](../../packages/fanfic/fanfic-local/README.md) 负责基于随附 [《一世之尊》正典包](../../canon-packs/yishizhizun) 的仓库内提供方，39 个直接工具与 3 个分布式编排工具收录在[工具 Schema 目录](../tool-catalog.md#deepseek-aidsh-tool-fanfic)。下面由生成器产出的 Cordis API 记录面向提供方的分派服务契约，是每个操作的方法级权威。
 
 ## 正典与分支
 
@@ -44,7 +44,13 @@
 
 ## 版本
 
-磁盘上的分支为 format 3，作者上下文数据包为 version 4，工具 API 为 0.7。由于 DeepSeek Harness 仍属预发布阶段，v0.7 分支会拒绝较旧的磁盘格式而非迁移它们；实时测试应使用全新状态。
+磁盘上的分支为 format 3，作者上下文数据包为 version 4，工具 API 为 0.8。由于 DeepSeek Harness 仍属预发布阶段，v0.8 分支会拒绝较旧的磁盘格式而非迁移它们；实时测试应使用全新状态。
+
+## 分布式 Author Brain
+
+`@deepseek-ai/dsh-tool-fanfic-distributed` 直接消费现有 `ctx.fanfic` 与 `ctx.subagents` seam，不新增 service。父级 Author Agent 保持最终权威；`fanfic_prepare_chapter` 并行分发有界、只读的 canon/character/story specialist，`fanfic_review_draft` 则针对当前 staged draft 分发独立 critic。Worker pool 可以选择不同 child LLM route，并使用有序 fallback 与进程内 cooldown；成功 packet 按 branch revision 或 draft hash 缓存。Specialist 使用强制 allow-only tool scope，不能修改 fanfic state、取得 commit 权限或递归调用 subagent control。
+
+只有当部署中的 worker 实际消耗独立 provider/model quota 时，这种分发才会降低 Author model 的研究/审稿 rate-limit 压力。多个 worker 共用一个 credential 不会创造额外限额。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 

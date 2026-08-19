@@ -4,7 +4,7 @@ English | [中文](fanfic.zh.md)
 
 `ctx.fanfic` ([`@deepseek-ai/dsh-fanfic`](../../packages/fanfic/fanfic)) is the opt-in fanfic authoring seam: an immutable source canon plus mutable author branches, with spoiler-safe lookups, verified enrichment, and transactional chapter settlement. It loads only through the [fanfic-authoring bundle patch](../../packages/bundle/fanfic-authoring), never a base composition.
 
-The [package README](../../packages/fanfic/fanfic/README.md) owns composition and service config, [`@deepseek-ai/dsh-fanfic-local`](../../packages/fanfic/fanfic-local/README.md) owns the in-repo provider over the shipped [《一世之尊》 canon pack](../../canon-packs/yishizhizun), and the 39 model-facing tools are catalogued in the [tool schema catalog](../tool-catalog.md#deepseek-aidsh-tool-fanfic). The generated Cordis API below records the provider-selecting service contract and is the method-level authority for every operation.
+The [package README](../../packages/fanfic/fanfic/README.md) owns composition and service config, [`@deepseek-ai/dsh-fanfic-local`](../../packages/fanfic/fanfic-local/README.md) owns the in-repo provider over the shipped [《一世之尊》 canon pack](../../canon-packs/yishizhizun), and its 39 direct tools plus 3 distributed orchestration tools are catalogued in the [tool schema catalog](../tool-catalog.md#deepseek-aidsh-tool-fanfic). The generated Cordis API below records the provider-selecting service contract and is the method-level authority for every operation.
 
 ## Canon and branches
 
@@ -44,7 +44,13 @@ Original mystery truths may register `protectedRevealTerms` and `revealCondition
 
 ## Versioning
 
-On-disk branches are format 3, author context packets are version 4, and the tool API is 0.7. Because DeepSeek Harness is pre-release, v0.7 branches reject older on-disk formats instead of migrating them; live tests use fresh state.
+On-disk branches are format 3, author context packets are version 4, and the tool API is 0.8. Because DeepSeek Harness is pre-release, v0.8 branches reject older on-disk formats instead of migrating them; live tests use fresh state.
+
+## Distributed Author Brain
+
+`@deepseek-ai/dsh-tool-fanfic-distributed` consumes the existing `ctx.fanfic` and `ctx.subagents` seams without adding a new service. The parent Author Agent stays authoritative; `fanfic_prepare_chapter` dispatches bounded read-only canon/character/story specialists in parallel, and `fanfic_review_draft` dispatches an independent critic over the current staged draft. Worker pools may select different child LLM routes and use ordered fallback with in-memory cooldown; successful packets are cached against branch revision or draft hash. Specialists have enforced allow-only tool scopes and cannot mutate fanfic state, obtain commit authority, or recurse into subagent controls.
+
+This distribution reduces Author-model research/critique workload only when deployment workers consume independent provider/model quotas. Using several workers behind one credential does not create extra rate-limit capacity.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 

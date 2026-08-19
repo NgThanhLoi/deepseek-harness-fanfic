@@ -234,6 +234,7 @@
     { "path": "./packages/fanfic/fanfic" },
     { "path": "./packages/fanfic/fanfic-local" },
     { "path": "./packages/fanfic/tool-fanfic" },
+    { "path": "./packages/fanfic/tool-fanfic-distributed" },
     { "path": "./packages/spill/spill" },
     { "path": "./packages/spill/spill-local" },
     { "path": "./packages/spill/spill-policy" },

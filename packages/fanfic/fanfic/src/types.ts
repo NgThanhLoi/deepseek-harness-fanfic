@@ -580,7 +580,7 @@ export interface RecordFanficDivergenceRequest {
   readonly openQuestions: readonly string[]
 }
 
-/** Staged prose object used by all v0.7 audit and commit operations. */
+/** Staged prose object used by the transactional audit and commit operations. */
 export interface FanficDraft {
   readonly id: string
   readonly branchId: FanficBranchId

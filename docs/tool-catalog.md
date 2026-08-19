@@ -26,6 +26,7 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-fs` | `edit`, `read`, `read_image`, `write` | `ctx.tools`, `ctx.fs`, `ctx.systemPrompt`, `ctx.attachments (read_image registration)`, `ctx.llm + an image-capable route (read_image execution)` | `tool/call`, `fs/write-intent or fs/edit-intent for mutations`, `fs/observed after read presence/absence or successful file operation`, `durable attachment (read_image)`, `tool/result` | - | The read-before-write/edit policy is added by `@deepseek-ai/dsh-fs-observation-policy` (an `fs/*` event-gate plugin, no schema change); a deployment that loads these tools is expected to also load it. `read_image` is not registered without `ctx.attachments`; its schema is route-independent, and execution refuses unless the exact routed model declares image input. |
 | `@deepseek-ai/dsh-tool-fs-search` | `glob`, `grep` | `ctx.tools`, `ctx.subprocess`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | glob and grep are unconditional discovery tools that spawn the packaged ripgrep binary (`@vscode/ripgrep`) through ctx.subprocess as ordinary foreground calls (never background jobs) — no host `rg` install and no shell layer. The catalog uses `sampleOverCapGlobResults: true`; deployments must choose that behavior explicitly. Capped results save the complete formatted list through the optional ctx.spillStore backend; returned locators are follow-up-readable/searchable when the backend exposes local paths in co-located deployments. |
 | `@deepseek-ai/dsh-tool-fanfic` | `anti_copy_guard`, `author_context`, `canon_causality_trace`, `canon_chapter_read`, `canon_context_expand`, `canon_enrichment_checkpoint`, `canon_enrichment_commit`, `canon_enrichment_plan`, `canon_enrichment_progress`, `canon_enrichment_validate`, `canon_search`, `canon_snapshot`, `canon_timeline_context`, `character_intelligence`, `character_voice_context`, `fanfic_apply_delta`, `fanfic_audit`, `fanfic_branch_create`, `fanfic_branch_get`, `fanfic_branch_list`, `fanfic_chapter_state`, `fanfic_divergence_record`, `fanfic_draft_get`, `fanfic_draft_stage`, `fanfic_draft_update`, `fanfic_impact_scan`, `fanfic_intent_update`, `fanfic_status`, `fanfic_style_audit`, `invention_upsert`, `mystery_truth_upsert`, `narrative_style_context`, `power_assess`, `story_arc_upsert`, `story_director_context`, `story_foreshadow_upsert`, `story_horizon_set`, `story_reconciliation_resolve`, `story_thread_upsert` | `ctx.tools`, `ctx.fanfic`, `ctx.systemPrompt`, `a read-only canon source + branch-state Provider at execution time` | `tool/call`, `mutable branch state through the fanfic Provider`, `tool/result` | - | Opt-in fanfic authoring tools over `ctx.fanfic`, loaded only from the fanfic-authoring bundle patch (never a base composition). The 39 model-visible schemas are provider-neutral; a deployment supplies a canon pack and branch-state Provider (e.g. `@deepseek-ai/dsh-fanfic-local`) at execution time. |
+| `@deepseek-ai/dsh-tool-fanfic-distributed` | `fanfic_prepare_chapter`, `fanfic_review_draft`, `fanfic_worker_status` | `ctx.tools`, `ctx.fanfic`, `ctx.subagents`, `ctx.systemPrompt` | `tool/call`, `read-only child subagent sessions`, `tool/result` | - | Opt-in distributed Author Brain Consumer. The parent Author stays authoritative while read-only specialist subagents run through ctx.subagents with structured packets, fallback/cooldown routing, and state-sensitive caching. |
 | `@deepseek-ai/dsh-tool-terminal` | `terminal_close`, `terminal_list`, `terminal_open`, `terminal_read`, `terminal_send`, `terminal_signal` | `ctx.tools`, `ctx.terminals`, `ctx.systemPrompt`, `ctx.jobs at call time for run_in_background` | `tool/call`, `tool/result` | - | The six terminal tools are opt-in and complement one-shot shell/filesystem tools. `terminal_send(run_in_background: true)` registers with `ctx.jobs`; TUI, named key sequences, BEL, resize, auto-start, and cross-agent sharing are absent from the schema. |
 | `@deepseek-ai/dsh-tool-goal` | `create_goal`, `get_goal`, `update_goal` | `ctx.tools`, `ctx.agents`, `ctx.goals`, `ctx.systemPrompt`, `a calling Agent in an authorized open turn` | `tool/call`, `goal/change for mutations`, `tool/result` | - | create, edit, pause, and resume require direct-human root authority; complete and blocked also accept the exact current goal round. The default blocked lower bound is three admitted rounds. |
 | `@deepseek-ai/dsh-schedule` | `schedule_create`, `schedule_delete`, `schedule_list` | `ctx.tools`, `ctx.sessions`, `Session persistence`, `a future live root Agent` | `tool/call`, `schedule/change create or delete`, `tool/result` | - | Registered only inside live root Agent scopes created after the opt-in Schedule plugin loads. Version 1 accepts after_seconds, explicit absolute at, and bounded fixed-rate every_seconds, and discloses session-local delivery; management reads and mutations require the shared Session persistence barrier. |
@@ -2889,6 +2890,133 @@ Create or replace one plot/character/mystery/relationship/theme thread with expl
 Source: [`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
 
 Opt-in fanfic authoring tools over `ctx.fanfic`, loaded only from the fanfic-authoring bundle patch (never a base composition). The 39 model-visible schemas are provider-neutral; a deployment supplies a canon pack and branch-state Provider (e.g. `@deepseek-ai/dsh-fanfic-local`) at execution time.
+
+<a id="deepseek-aidsh-tool-fanfic-distributed"></a>
+
+## `@deepseek-ai/dsh-tool-fanfic-distributed`
+
+### `fanfic_prepare_chapter`
+
+Fan out read-only canon, character, and story specialists for one planned fanfic chapter, with parallel execution, fallback workers, cooldowns, and revision-keyed caching. The Author remains responsible for the final plan.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "branchId": {
+      "type": "string",
+      "description": "Branch UUID or unique branch name."
+    },
+    "fanficChapter": {
+      "type": "integer"
+    },
+    "asOfChapter": {
+      "type": "integer"
+    },
+    "povCharacter": {
+      "type": "string"
+    },
+    "participants": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "sceneGoal": {
+      "type": "string"
+    },
+    "query": {
+      "type": "string"
+    },
+    "roles": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "canon",
+          "character",
+          "story"
+        ]
+      },
+      "description": "Defaults to canon + character + story."
+    },
+    "forceRefresh": {
+      "type": "boolean",
+      "description": "Ignore cached specialist packets for this exact branch revision/scene request."
+    }
+  },
+  "required": [
+    "branchId",
+    "fanficChapter",
+    "asOfChapter",
+    "povCharacter",
+    "sceneGoal"
+  ]
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic-distributed/src/index.ts`](../packages/fanfic/tool-fanfic-distributed/src/index.ts)
+
+### `fanfic_review_draft`
+
+Run an independent read-only critic specialist over one staged draft. This complements but never replaces deterministic canon/style/anti-copy audits.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "branchId": {
+      "type": "string",
+      "description": "Branch UUID or unique branch name."
+    },
+    "draftId": {
+      "type": "string"
+    },
+    "asOfChapter": {
+      "type": "integer"
+    },
+    "povCharacter": {
+      "type": "string"
+    },
+    "participants": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "sceneGoal": {
+      "type": "string"
+    },
+    "forceRefresh": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "branchId",
+    "draftId",
+    "asOfChapter",
+    "povCharacter",
+    "sceneGoal"
+  ]
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic-distributed/src/index.ts`](../packages/fanfic/tool-fanfic-distributed/src/index.ts)
+
+### `fanfic_worker_status`
+
+Inspect distributed fanfic specialist workers, provider capabilities, cooldown/failure health, and packet-cache size. Does not run a model.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic-distributed/src/index.ts`](../packages/fanfic/tool-fanfic-distributed/src/index.ts)
+
+Opt-in distributed Author Brain Consumer. The parent Author stays authoritative while read-only specialist subagents run through ctx.subagents with structured packets, fallback/cooldown routing, and state-sensitive caching.
 
 <a id="deepseek-aidsh-tool-terminal"></a>
 

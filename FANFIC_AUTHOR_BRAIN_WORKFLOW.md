@@ -77,9 +77,14 @@ The style subsystem is deliberately evidence-first and non-imitative. `style/sty
 
 Do not optimize blindly for a numeric score. Use the metrics as broad diagnostics. Character-specific wording still comes from `character_voice_context`; scene truth still comes from canon/branch state. Before final prose, `fanfic_style_audit` combines metric drift warnings with corpus-wide exact-overlap detection. Future-canon overlap is detected without exposing the future chapter location.
 
-## v0.7 quality-enforced author workflow rules
+## v0.8 distributed Author Brain workflow rules
 
-- Start every live authoring run with `fanfic_status` and require `toolApiVersion=0.7.0`, `branchFormatVersion=3`, and `authorContextVersion=4`. After `pnpm run build`, `node scripts/fanfic/verify_runtime_bundle.mjs` must pass before attaching the model.
+- Start every live authoring run with `fanfic_status` and require `toolApiVersion=0.8.0`, `branchFormatVersion=3`, and `authorContextVersion=4`. After `pnpm run build`, `node scripts/fanfic/verify_runtime_bundle.mjs` must pass before attaching the model.
+
+- When `fanfic_prepare_chapter` is mounted, use it before substantial planning to dispatch canon, character, and story specialists concurrently. They are read-only advisors; the parent Author remains responsible for reconciling packets against `author_context` and for every Story Director/branch mutation.
+- Use `fanfic_worker_status` before a long run to verify that the intended specialist providers are available and support structured output/tool filtering. Multiple workers on the same API quota do not provide rate-limit isolation; configure independent child provider/model routes when quota distribution is the goal.
+- After `fanfic_draft_stage`, `fanfic_review_draft` can route a separate critic over the exact staged draft. Critic output is advisory and never substitutes for `fanfic_audit`, `fanfic_style_audit`, or `anti_copy_guard`.
+- Specialist success is cached against branch revision or draft hash. A branch mutation or staged-draft update invalidates the matching work naturally; use `forceRefresh` only when fresh independent analysis is desired without a state change. Partial preparation (`complete=false`) is a missing-analysis condition, not permission to invent the absent evidence.
 - Every branch owns a durable `writingContract` (default `zh-CN`, 2500–4000 Han characters, style mode `auto`). A staged branch draft is audited against that contract automatically; per-call length arguments cannot weaken it.
 - Stage final prose with `fanfic_draft_stage`; use only its `draftId` for the three commit audits and `fanfic_apply_delta`. `fanfic_draft_update` changes the hash/revision and invalidates earlier receipts without making the model re-copy the full chapter through every tool call.
 - `fanfic_style_audit` now includes a deterministic Prose Quality Guard. Configurable hard signals cover long runs of ultra-short paragraphs, tail collapse, repeated sentences, Han-bigram diversity collapse, and filler/padding cadence. `revision-required` quality findings cannot issue a style receipt.

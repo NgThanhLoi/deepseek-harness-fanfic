@@ -457,8 +457,8 @@ const SERVICE_ROLES: ServiceRole[] = [
     title: 'Immersion fanfic authoring seam',
     mode: 'seam',
     implementations: ['fanfic-local'],
-    consumers: ['tool-fanfic'],
-    note: 'One registered provider serves immutable canon retrieval and transactional mutable branches; tool-fanfic exposes the model-facing tools and is composed only through the fanfic-authoring patch bundle.',
+    consumers: ['tool-fanfic', 'tool-fanfic-distributed'],
+    note: 'One registered provider serves immutable canon retrieval and transactional mutable branches; tool-fanfic exposes direct authoring tools while tool-fanfic-distributed coordinates read-only specialist subagents. Both are composed only through the fanfic-authoring patch bundle.',
   },
   {
     key: 'compaction',
@@ -475,8 +475,8 @@ const SERVICE_ROLES: ServiceRole[] = [
     title: 'Subagent provider and continuation service',
     mode: 'seam',
     implementations: ['subagent-spawn-in-process', 'subagent-fork-in-process', 'subagent-acp', 'subagent-codex', 'subagent-claude-code', 'subagent-dsh-sdk'],
-    consumers: ['tool-subagent', 'tool-subagent-control', 'tool-ralph'],
-    note: 'Providers implement transports; the service also owns optional Activation-based continuation orchestration, tool-subagent selects one-shot or continuable delegation, tool-subagent-control delivers follow-ups, and tool-ralph requires one fresh structured-output route.',
+    consumers: ['tool-subagent', 'tool-subagent-control', 'tool-ralph', 'tool-fanfic-distributed'],
+    note: 'Providers implement transports; the service also owns optional Activation-based continuation orchestration, tool-subagent selects one-shot or continuable delegation, tool-subagent-control delivers follow-ups, tool-ralph requires one fresh structured-output route, and tool-fanfic-distributed dispatches bounded read-only authoring specialists.',
   },
   {
     key: 'jobs',

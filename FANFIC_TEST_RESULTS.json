@@ -1,11 +1,36 @@
 {
-  "version": "0.7",
-  "milestone": "Quality Enforcement & Reviewability",
-  "baseCommit": "47f943859bef60e4160492346772ded9b24f765a",
-  "toolApiVersion": "0.7.0",
+  "version": "0.8",
+  "milestone": "Distributed Author Brain",
+  "originalBaseCommit": "47f943859bef60e4160492346772ded9b24f765a",
+  "integrationBaselineCommit": "9abe161600fd171a84e47c9830cade5ba6753f8f",
+  "toolApiVersion": "0.8.0",
+  "distributedApiVersion": "0.8.0",
   "branchFormatVersion": 3,
   "authorContextVersion": 4,
-  "modelFacingToolCount": 39,
+  "directModelFacingToolCount": 39,
+  "distributedModelFacingToolCount": 3,
+  "modelFacingToolCount": 42,
+  "focusedTypeScript": {
+    "ok": true,
+    "packages": [
+      "packages/fanfic/fanfic",
+      "packages/fanfic/fanfic-local",
+      "packages/fanfic/tool-fanfic",
+      "packages/fanfic/tool-fanfic-distributed"
+    ],
+    "typescript": "5.8.3"
+  },
+  "distributedRouterSmoke": {
+    "ok": true,
+    "checks": [
+      "retryable fallback + cooldown",
+      "state-sensitive cache invalidation",
+      "non-retryable cancellation",
+      "packet-size cap",
+      "read-only specialist tool policy + direct-policy specialist exception",
+      "diagnostic credential redaction"
+    ]
+  },
   "providerSmoke": {
     "ok": true,
     "status": {
@@ -127,20 +152,19 @@
       "canonReference": 150
     }
   },
-  "longformRegression": {
+  "longformRegressionSmoke": {
     "ok": true,
-    "version": "0.7",
+    "coreVersion": "0.7",
     "writingContract": {
       "shortDraftRejected": true,
       "enforcedMinHanChars": 2500
     },
     "draftStore": {
-      "staleReceiptBlocked": true,
-      "acceptedDraftId": "draft-1a8597f4-54dd-4a99-8cd8-0abc6d432448"
+      "staleReceiptBlocked": true
     },
     "proseQuality": {
       "rejected": true,
-      "findings": [
+      "findingCodes": [
         "PROSE_DEGENERATION_SHORT_PARAGRAPH_RUN",
         "PROSE_DEGENERATION_TAIL_COLLAPSE",
         "PROSE_DEGENERATION_REPEATED_SENTENCES",
@@ -161,18 +185,9 @@
     },
     "authorContext": {
       "version": 4,
-      "chars": 17860,
-      "telemetry": {
-        "serializedChars": 17860,
-        "budgetChars": 20000,
-        "compactionLevel": 3,
-        "omitted": {
-          "sourceExcerpts": 7,
-          "characterEvidence": 8,
-          "olderBranchRecords": 0,
-          "storyDirectorRecords": 0
-        }
-      }
+      "serializedChars": 17860,
+      "budgetChars": 20000,
+      "compactionLevel": 3
     },
     "auditPrecision": {
       "riskyCount": 1,
@@ -185,85 +200,25 @@
     "activeFacts": 1,
     "draftHanChars": 17
   },
-  "checks": {
-    "focusedTypeScriptBuild": {
-      "status": "pass",
-      "typescript": "5.8.3",
-      "note": "Temporary local type/workspace stubs used because the supplied checkout has no dependency install; removed before distribution."
-    },
-    "providerSmoke1409": {
-      "status": "pass",
-      "chapterCount": 1409
-    },
-    "longformRegressionSmoke": {
-      "status": "pass",
-      "covers": [
-        "durable branch Writing Contract",
-        "staged Draft Store and stale receipt invalidation",
-        "prose degeneration guard",
-        "rewrite inherit",
-        "rewrite replace silent-drop rejection",
-        "backfill rejection",
-        "Mystery Reveal Guard declaration/condition/evidence authorization",
-        "same-chapter divergence",
-        "audit precision",
-        "hard Author Context v4 telemetry"
-      ]
-    },
-    "reviewExportSmoke": {
-      "status": "pass",
-      "covers": [
-        "active-only projection",
-        "referenced staged draft export",
-        "machine-readable manifest"
-      ]
-    },
-    "manualCordisParity": {
-      "status": "pass",
-      "providerConfigKeys": 26,
-      "toolConfigKeys": 11
-    },
-    "workspaceConstraints": {
-      "status": "pass"
-    },
-    "packageInvariants": {
-      "status": "pass",
-      "message": "223 hand-owned package companion(s) conform."
-    },
-    "packageLicenses": {
-      "status": "pass",
-      "message": "226 DSH package(s) checked; all declare MIT."
-    },
-    "agentNoteFormat": {
-      "status": "pass",
-      "message": "542 Agent Notes conform."
-    },
-    "agentNoteClassification": {
-      "status": "pass",
-      "message": "542 Agent Notes structurally consistent."
-    },
-    "exportJSDoc": {
-      "status": "partial",
-      "fanficViolations": 0,
-      "upstreamViolations": 8,
-      "upstreamFile": "packages/subagent/subagent-claude-code/src/process.ts"
-    },
-    "markdownReadmeGates": {
-      "status": "blocked",
-      "reason": "Supplied checkout has no workspace install; mdast-util-from-markdown is unavailable."
-    },
-    "repositoryCordisGate": {
-      "status": "blocked",
-      "reason": "Supplied checkout has no workspace install; js-yaml is unavailable to the Node verifier. Fanfic bundle/config parity passed independently with PyYAML."
-    },
-    "runtimeBundlePreflight": {
-      "status": "blocked-before-normal-build",
-      "expectedToolApiVersion": "0.7.0",
-      "reason": "Normal pnpm/tsdown build is required to produce packages/fanfic/tool-fanfic/lib/index.js; preflight correctly fails loud while it is absent."
-    },
-    "fullPnpmInstallBuildTest": {
-      "status": "blocked",
-      "reason": "Sandbox Node is 22.16.0 while Harness requires ^22.19 || >=24; pnpm is unavailable and npm registry access is unavailable."
-    }
-  }
+  "manualCordisConfigParity": {
+    "ok": true,
+    "fanficLocalKeys": 26,
+    "toolFanficKeys": 11,
+    "toolFanficDistributedKeys": 8
+  },
+  "repositoryGates": {
+    "workspaceConstraints": "pass",
+    "packageInvariants": "pass: 224 hand-owned package companions",
+    "packageLicenses": "pass: 227 DSH packages all MIT",
+    "agentNoteFormat": "pass: 552 notes",
+    "agentNoteClassification": "pass: 552 notes",
+    "exportJsdoc": "fanfic pass; 8 pre-existing upstream violations in subagent-claude-code/process.ts",
+    "gitDiffCheck": "pass"
+  },
+  "blocked": [
+    "Full pnpm install/build/test not run: sandbox Node is 22.16.0 while repo requires ^22.19 || >=24, and the supplied source does not contain a complete dependency install.",
+    "Real Loader composition test source is included but was not executable in this sandbox because upstream runtime dependencies/bundles (for example esbuild/chokidar/zod runtime) are absent.",
+    "verify-cordis-config.ts is blocked by the incomplete js-yaml install in the supplied checkout; exact fanfic patch/source config parity was validated independently.",
+    "README model-experience/limitations gates are blocked by missing mdast-util-from-markdown."
+  ]
 }

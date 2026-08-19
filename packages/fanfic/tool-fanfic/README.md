@@ -22,9 +22,9 @@ The plugin currently exposes 39 tools: `fanfic_status`, `canon_search`, `canon_c
 
 All deployment-varying defaults are explicit Cordis config: source-search limit, context-expansion size, character-evidence count, voice-sample count, style-sample count, anti-copy phrase/finding defaults, power-evidence count, enrichment batch size, Story Director horizon size, and maximum audit claims. The shipped `fanfic-authoring` bundle supplies conservative values; profiles may replace them without changing tool code. Per-call limits such as `limit`, `maxEntities`, `batchSize`, and `horizonSize` can override those defaults and remain provider-capped.
 
-## v0.7 quality-enforced author workflow
+## v0.8 distributed-aware author workflow
 
-The tool API version is `0.7.0`, branch format is `3`, and author-context version is `4`. Accepted prose is staged once and referenced by `draftId`; updating a staged draft changes its hash/revision and invalidates old receipts. The branch Writing Contract is a hard acceptance invariant, so staged style audits always enforce its Han-character range even if the caller supplies weaker ad-hoc limits.
+The tool API version is `0.8.0`, branch format is `3`, and author-context version is `4`. The optional sibling `@deepseek-ai/dsh-tool-fanfic-distributed` can offload canon/character/story preparation and draft critique to read-only subagents; these direct 39 tools remain the sole mutation/audit surface. Accepted prose is staged once and referenced by `draftId`; updating a staged draft changes its hash/revision and invalidates old receipts. The branch Writing Contract is a hard acceptance invariant, so staged style audits always enforce its Han-character range even if the caller supplies weaker ad-hoc limits.
 
 `fanfic_style_audit` now includes a Provider-configurable Prose Quality Guard for ultra-short paragraph runs, tail collapse, repeated sentences, Han-bigram diversity collapse, and filler/padding cadence. Revision-required findings cannot produce a commit receipt. Original mystery truth is also enforceable: `mystery_truth_upsert` records protected reveal terms and reveal conditions; a full reveal declaration must name a registered satisfied condition and exact evidence excerpts present in the staged draft, and planned payoff settlement requires the canon-audit authorization.
 
@@ -41,9 +41,11 @@ When mounted, the fixed `tool:fanfic` section is:
 ##### Fanfic authoring policy
 
 ```markdown
-Fanfic authoring policy (tool API 0.7.0):
-- At the start of a live authoring run, call fanfic_status. If toolApiVersion is missing or not 0.7.0, STOP: the runtime bundle is stale and must be rebuilt before writing.
+Fanfic authoring policy (tool API 0.8.0):
+- At the start of a live authoring run, call fanfic_status. If toolApiVersion is missing or not 0.8.0, STOP: the runtime bundle is stale and must be rebuilt before writing.
+- If your current task explicitly identifies you as a read-only distributed specialist child, follow that specialist task instead of the Author settlement workflow below: use only the tools visible in your child scope, do not write final chapter prose, and never attempt author-state mutation.
 - Before planning or writing a scene, call author_context with the exact canon cutoff, POV, participants, scene goal, and branch when one exists; for a branch, always pass the fanficChapter being written.
+- When fanfic_prepare_chapter is available, use it before substantial chapter planning to delegate canon/character/story analysis to read-only specialists; you remain the sole Author and must reconcile their advice against author_context. After staging prose, fanfic_review_draft may add independent critique but never replaces deterministic audits.
 - Treat canonTruth as binding established history. After a recorded divergence, canonReference is counterfactual reference only; never force later canon events back onto the branch.
 - Never use source material after the requested canon cutoff. Do not turn suspicion, reader knowledge, or hidden canon truth into POV knowledge without evidence.
 - Prefer character motivation, ideology, relationships, and known capabilities over plot railroading. Read branch authorIntent as the project-level premise/theme/tone policy. Use character_intelligence and power_assess when a scene depends on characterization or combat feasibility; use character_voice_context before dialogue-heavy scenes when voice fidelity matters.

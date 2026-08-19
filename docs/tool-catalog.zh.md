@@ -27,6 +27,7 @@
 | `@deepseek-ai/dsh-tool-str-replace-editor` | `str_replace_editor` | `ctx.tools`、`ctx.fs` | `tool/call`、`fs/observed after view presence/absence, edit absence, or successful mutation`、`tool/result` | - | 基于文件系统 seam 的独立查看／创建／唯一字面量替换／按行插入工具；可与任何 shell 或终端接口组合。 |
 | `@deepseek-ai/dsh-tool-fs` | `edit`、`read`、`read_image`、`write` | `ctx.tools`、`ctx.fs`、`ctx.systemPrompt`、`ctx.attachments (read_image registration)`、`ctx.llm + an image-capable route (read_image execution)` | `tool/call`、`fs/write-intent or fs/edit-intent for mutations`、`fs/observed after read presence/absence or successful file operation`、`durable attachment (read_image)`、`tool/result` | - | 先读后写／编辑策略由 `@deepseek-ai/dsh-fs-observation-policy` 添加；它是一个 `fs/*` 事件门禁插件，不会改变 schema。加载这些工具的部署按预期也应加载该插件。没有 `ctx.attachments` 时 `read_image` 不会注册；其 schema 与路由无关，执行时除非确切路由的模型声明图像输入，否则拒绝。 |
 | `@deepseek-ai/dsh-tool-fanfic` | `anti_copy_guard`、`author_context`、`canon_causality_trace`、`canon_chapter_read`、`canon_context_expand`、`canon_enrichment_checkpoint`、`canon_enrichment_commit`、`canon_enrichment_plan`、`canon_enrichment_progress`、`canon_enrichment_validate`、`canon_search`、`canon_snapshot`、`canon_timeline_context`、`character_intelligence`、`character_voice_context`、`fanfic_apply_delta`、`fanfic_audit`、`fanfic_branch_create`、`fanfic_branch_get`、`fanfic_branch_list`、`fanfic_chapter_state`、`fanfic_divergence_record`、`fanfic_draft_get`、`fanfic_draft_stage`、`fanfic_draft_update`、`fanfic_impact_scan`、`fanfic_intent_update`、`fanfic_status`、`fanfic_style_audit`、`invention_upsert`、`mystery_truth_upsert`、`narrative_style_context`、`power_assess`、`story_arc_upsert`、`story_director_context`、`story_foreshadow_upsert`、`story_horizon_set`、`story_reconciliation_resolve`、`story_thread_upsert` | `ctx.tools`、`ctx.fanfic`、`ctx.systemPrompt`、`a read-only canon source + branch-state Provider at execution time` | `tool/call`、`mutable branch state through the fanfic Provider`、`tool/result` | - | 面向 `ctx.fanfic` 的选择启用同人写作工具，只能从 fanfic-authoring bundle patch 加载（绝不进入基础组合）。39 个模型可见的 schema 与提供方无关；部署方在执行时为它们提供正典包与分支状态提供方（例如 `@deepseek-ai/dsh-fanfic-local`）。 |
+| `@deepseek-ai/dsh-tool-fanfic-distributed` | `fanfic_prepare_chapter`、`fanfic_review_draft`、`fanfic_worker_status` | `ctx.tools`、`ctx.fanfic`、`ctx.subagents`、`ctx.systemPrompt` | `tool/call`、`read-only child subagent sessions`、`tool/result` | - | 可选的分布式 Author Brain Consumer。父级 Author 保持最终权威，只读 specialist subagent 通过 ctx.subagents 运行，并使用 structured packet、fallback/cooldown 路由与 state-sensitive cache。 |
 | `@deepseek-ai/dsh-tool-fs-search` | `glob`、`grep` | `ctx.tools`、`ctx.subprocess`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn 随包提供的 ripgrep 二进制文件（`@vscode/ripgrep`），并作为普通前台调用运行，绝不作为后台任务；无需在宿主机安装 `rg`，也不经过 shell 层。本目录使用 `sampleOverCapGlobResults: true`；部署必须显式选择该行为。结果超过上限时，会通过可选的 ctx.spillStore 后端保存完整的格式化列表；在共置部署中，如果后端公开本地路径，返回的定位信息可供后续读取／搜索。 |
 | `@deepseek-ai/dsh-tool-terminal` | `terminal_close`、`terminal_list`、`terminal_open`、`terminal_read`、`terminal_send`、`terminal_signal` | `ctx.tools`、`ctx.terminals`、`ctx.systemPrompt`、`ctx.jobs at call time for run_in_background` | `tool/call`、`tool/result` | - | 这 6 个终端工具需要选择启用，用于补充一次性 bash／文件系统工具。`terminal_send(run_in_background: true)` 会注册到 `ctx.jobs`；schema 不包含 TUI、具名按键序列、BEL、调整尺寸、自动启动和跨 agent 共享。 |
 | `@deepseek-ai/dsh-tool-goal` | `create_goal`、`get_goal`、`update_goal` | `ctx.tools`、`ctx.agents`、`ctx.goals`、`ctx.systemPrompt`、`a calling Agent in an authorized open turn` | `tool/call`、`goal/change for mutations`、`tool/result` | - | create、edit、pause 和 resume 要求直接来自人类的根权限；complete 和 blocked 也接受确切的当前 Goal Round。blocked 的默认下限是 3 个获准的 Round。 |
@@ -2891,6 +2892,133 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
 ```
 
 来源：[`packages/fanfic/tool-fanfic/src/index.ts`](../packages/fanfic/tool-fanfic/src/index.ts)
+
+<a id="deepseek-aidsh-tool-fanfic-distributed"></a>
+
+## `@deepseek-ai/dsh-tool-fanfic-distributed`
+
+### `fanfic_prepare_chapter`
+
+针对一个计划中的同人章节，并行分发只读 canon、character 与 story specialist，并提供 fallback worker、cooldown 与 revision-keyed cache。最终计划仍由 Author 负责。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "branchId": {
+      "type": "string",
+      "description": "Branch UUID or unique branch name."
+    },
+    "fanficChapter": {
+      "type": "integer"
+    },
+    "asOfChapter": {
+      "type": "integer"
+    },
+    "povCharacter": {
+      "type": "string"
+    },
+    "participants": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "sceneGoal": {
+      "type": "string"
+    },
+    "query": {
+      "type": "string"
+    },
+    "roles": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "canon",
+          "character",
+          "story"
+        ]
+      },
+      "description": "Defaults to canon + character + story."
+    },
+    "forceRefresh": {
+      "type": "boolean",
+      "description": "Ignore cached specialist packets for this exact branch revision/scene request."
+    }
+  },
+  "required": [
+    "branchId",
+    "fanficChapter",
+    "asOfChapter",
+    "povCharacter",
+    "sceneGoal"
+  ]
+}
+```
+
+来源：[`packages/fanfic/tool-fanfic-distributed/src/index.ts`](../packages/fanfic/tool-fanfic-distributed/src/index.ts)
+
+### `fanfic_review_draft`
+
+对一个 staged draft 运行独立只读 critic specialist。它用于补充 review，但绝不替代确定性的 canon/style/anti-copy audit。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "branchId": {
+      "type": "string",
+      "description": "Branch UUID or unique branch name."
+    },
+    "draftId": {
+      "type": "string"
+    },
+    "asOfChapter": {
+      "type": "integer"
+    },
+    "povCharacter": {
+      "type": "string"
+    },
+    "participants": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "sceneGoal": {
+      "type": "string"
+    },
+    "forceRefresh": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "branchId",
+    "draftId",
+    "asOfChapter",
+    "povCharacter",
+    "sceneGoal"
+  ]
+}
+```
+
+来源：[`packages/fanfic/tool-fanfic-distributed/src/index.ts`](../packages/fanfic/tool-fanfic-distributed/src/index.ts)
+
+### `fanfic_worker_status`
+
+检查分布式 fanfic specialist worker、provider capability、cooldown/failure health 与 packet-cache 大小；不会启动模型。
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+来源：[`packages/fanfic/tool-fanfic-distributed/src/index.ts`](../packages/fanfic/tool-fanfic-distributed/src/index.ts)
+
+可选的分布式 Author Brain Consumer。父级 Author 保持最终权威，只读 specialist subagent 通过 ctx.subagents 运行，并使用 structured packet、fallback/cooldown 路由与 state-sensitive cache。
 
 <a id="deepseek-aidsh-tool-terminal"></a>
 

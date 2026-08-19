@@ -22,7 +22,7 @@ import {
 export const name = 'tool-fanfic'
 export const inject = ['fanfic', 'tools', 'systemPrompt']
 
-const FANFIC_TOOL_API_VERSION = '0.7.0'
+const FANFIC_TOOL_API_VERSION = '0.8.0'
 const FANFIC_BRANCH_FORMAT_VERSION = 3
 const FANFIC_AUTHOR_CONTEXT_VERSION = 4
 
@@ -68,7 +68,9 @@ export const Config: z<Config> = z.object({
 
 const FANFIC_POLICY = `Fanfic authoring policy (tool API ${FANFIC_TOOL_API_VERSION}):
 - At the start of a live authoring run, call fanfic_status. If toolApiVersion is missing or not ${FANFIC_TOOL_API_VERSION}, STOP: the runtime bundle is stale and must be rebuilt before writing.
+- If your current task explicitly identifies you as a read-only distributed specialist child, follow that specialist task instead of the Author settlement workflow below: use only the tools visible in your child scope, do not write final chapter prose, and never attempt author-state mutation.
 - Before planning or writing a scene, call author_context with the exact canon cutoff, POV, participants, scene goal, and branch when one exists; for a branch, always pass the fanficChapter being written.
+- When fanfic_prepare_chapter is available, use it before substantial chapter planning to delegate canon/character/story analysis to read-only specialists; you remain the sole Author and must reconcile their advice against author_context. After staging prose, fanfic_review_draft may add independent critique but never replaces deterministic audits.
 - Treat canonTruth as binding established history. After a recorded divergence, canonReference is counterfactual reference only; never force later canon events back onto the branch.
 - Never use source material after the requested canon cutoff. Do not turn suspicion, reader knowledge, or hidden canon truth into POV knowledge without evidence.
 - Prefer character motivation, ideology, relationships, and known capabilities over plot railroading. Read branch authorIntent as the project-level premise/theme/tone policy. Use character_intelligence and power_assess when a scene depends on characterization or combat feasibility; use character_voice_context before dialogue-heavy scenes when voice fidelity matters.
@@ -592,7 +594,7 @@ export function apply(ctx: Context, config: Config): void {
 
   ctx.tools.register(defineTool({
     name: 'fanfic_draft_stage',
-    description: 'Stage one complete chapter draft once. All v0.7 audits and the final commit should reference the returned draftId instead of copying prose between tool calls.',
+    description: 'Stage one complete chapter draft once. All current audits and the final commit should reference the returned draftId instead of copying prose between tool calls.',
     parameters: {
       branchId: { type: 'string', required: true, description: 'Branch UUID or unique branch name.' },
       fanficChapter: { type: 'integer', required: true },

@@ -2491,6 +2491,54 @@ export interface Config {
 
 Source: [`packages/fanfic/tool-fanfic/src/index.ts:30`](../packages/fanfic/tool-fanfic/src/index.ts)
 
+<a id="deepseek-aidsh-tool-fanfic-distributed"></a>
+
+## `@deepseek-ai/dsh-tool-fanfic-distributed`
+
+Requires: `tools` · `fanfic` · `subagents` · `systemPrompt`
+
+```ts config-catalog
+/** Distributed fanfic orchestration configuration. */
+export interface Config {
+  /** Ordered worker pool; each row binds one specialist role to one registered subagent provider and optional model route. */
+  workers: Array<{
+    /** Stable worker name used in health, fallback, and diagnostics. */
+    readonly name: string
+    /** Specialist responsibility; only its read-only tool allow-list is visible in the child. */
+    readonly role: 'canon' | 'character' | 'story' | 'critic'
+    /** Registered `ctx.subagents` provider name, normally `spawn` for in-process workers. */
+    readonly subagentProvider: string
+    /** Positive fallback order within the role; lower values are attempted first. */
+    readonly priority: number
+    /** Optional child LLM route; omitted fields inherit the parent Author agent. */
+    readonly agentOptions?: {
+      /** Optional LLM provider override for this specialist. */
+      readonly provider?: string
+      /** Optional model override for this specialist. */
+      readonly model?: string
+      /** Optional positive output-token ceiling for the specialist. */
+      readonly maxTokens?: number
+    }
+  }>
+  /** Base in-memory cooldown after one retryable worker failure, in milliseconds. */
+  readonly failureCooldownMs: number
+  /** Maximum fallback workers attempted for one specialist role dispatch. */
+  readonly maxAttemptsPerRole: number
+  /** Maximum specialist roles started concurrently by one preparation call. */
+  readonly maxParallelSpecialists: number
+  /** Lifetime of one successful state-sensitive specialist packet cache entry, in milliseconds. */
+  readonly cacheTtlMs: number
+  /** Maximum successful specialist packets retained by the in-memory cache. */
+  readonly maxCacheEntries: number
+  /** Hard serialized-size cap for one specialist structured packet. */
+  readonly packetMaxChars: number
+  /** Hard serialized-size cap for one complete parent-visible distributed tool result. */
+  readonly resultMaxChars: number
+}
+```
+
+Source: [`packages/fanfic/tool-fanfic-distributed/src/index.ts:36`](../packages/fanfic/tool-fanfic-distributed/src/index.ts)
+
 <a id="deepseek-aidsh-tool-fs"></a>
 
 ## `@deepseek-ai/dsh-tool-fs`

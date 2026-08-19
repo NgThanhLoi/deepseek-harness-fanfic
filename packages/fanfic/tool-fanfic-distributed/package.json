@@ -1,6 +1,6 @@
 {
-  "name": "@deepseek-ai/dsh-tool-fanfic",
-  "description": "Model-facing canon, author-context, branch-state, and fanfic-audit tools for DeepSeek Harness",
+  "name": "@deepseek-ai/dsh-tool-fanfic-distributed",
+  "description": "Distributed read-only fanfic specialist orchestration over the DeepSeek Harness subagent seam",
   "version": "0.1.0-rc.7",
   "publishConfig": {
     "access": "public"
@@ -8,7 +8,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
-    "directory": "packages/fanfic/tool-fanfic"
+    "directory": "packages/fanfic/tool-fanfic-distributed"
   },
   "type": "module",
   "main": "lib/index.js",
@@ -34,17 +34,24 @@
     "@deepseek-ai/schemastery": "workspace:^"
   },
   "peerDependencies": {
+    "@deepseek-ai/dsh-agent": "workspace:^",
     "@deepseek-ai/dsh-fanfic": "workspace:^",
     "@deepseek-ai/dsh-invariants": "workspace:^",
+    "@deepseek-ai/dsh-llm": "workspace:^",
+    "@deepseek-ai/dsh-subagent": "workspace:^",
     "@deepseek-ai/dsh-system-prompt": "workspace:^",
     "@deepseek-ai/dsh-tools": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "devDependencies": {
+    "@deepseek-ai/dsh-agent": "workspace:^",
     "@deepseek-ai/dsh-fanfic": "workspace:^",
     "@deepseek-ai/dsh-invariants": "workspace:^",
+    "@deepseek-ai/dsh-llm": "workspace:^",
+    "@deepseek-ai/dsh-subagent": "workspace:^",
     "@deepseek-ai/dsh-system-prompt": "workspace:^",
     "@deepseek-ai/dsh-tools": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^"
+    "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/dsh-loader-smoke": "workspace:^"
   }
 }

@@ -2774,7 +2774,7 @@ function branchView(branch: FanficBranch, fanficChapter: number | undefined, exc
 
 function parseBranch(value: unknown): FanficBranch {
   const record = objectRecord(value, 'branch')
-  if (record['version'] !== 3) throw new Error(`unsupported fanfic branch version ${JSON.stringify(record['version'])}; v0.7 requires a fresh branch format v3 state directory`)
+  if (record['version'] !== 3) throw new Error(`unsupported fanfic branch version ${JSON.stringify(record['version'])}; fanfic branch format v3 is required`)
   const id = nonEmpty(record['id'], 'branch.id')
   validateBranchId(id)
   const divergences = parseArray(record['divergences'], 'branch.divergences', parseStoredDivergence)

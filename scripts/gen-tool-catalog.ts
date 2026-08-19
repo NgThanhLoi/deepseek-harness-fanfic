@@ -65,6 +65,7 @@ import * as ToolRalph from '@deepseek-ai/dsh-tool-ralph'
 import * as ToolWorkflow from '@deepseek-ai/dsh-tool-workflow'
 import FanficRuntime from '@deepseek-ai/dsh-fanfic'
 import * as ToolFanfic from '@deepseek-ai/dsh-tool-fanfic'
+import * as ToolFanficDistributed from '@deepseek-ai/dsh-tool-fanfic-distributed'
 import { githubSlug } from './verify-md-links.ts'
 
 /** Attachment seam marker that makes the attachments-conditional `read_image` schema harvestable. */
@@ -358,6 +359,33 @@ const TOOL_PACKAGES: ToolPackage[] = [
     },
     note:
       'Opt-in fanfic authoring tools over `ctx.fanfic`, loaded only from the fanfic-authoring bundle patch (never a base composition). The 39 model-visible schemas are provider-neutral; a deployment supplies a canon pack and branch-state Provider (e.g. `@deepseek-ai/dsh-fanfic-local`) at execution time.',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tool-fanfic-distributed',
+    dir: 'tool-fanfic-distributed',
+    source: 'packages/fanfic/tool-fanfic-distributed/src/index.ts',
+    requires: ['ctx.tools', 'ctx.fanfic', 'ctx.subagents', 'ctx.systemPrompt'],
+    writes: ['tool/call', 'read-only child subagent sessions', 'tool/result'],
+    async mount(ctx) {
+      await ctx.plugin(FanficRuntime)
+      await ctx.plugin(SubagentRuntime)
+      await ctx.plugin(ToolFanficDistributed, {
+        workers: [
+          { name: 'canon-catalog', role: 'canon', subagentProvider: 'spawn', priority: 1 },
+          { name: 'character-catalog', role: 'character', subagentProvider: 'spawn', priority: 1 },
+          { name: 'story-catalog', role: 'story', subagentProvider: 'spawn', priority: 1 },
+          { name: 'critic-catalog', role: 'critic', subagentProvider: 'spawn', priority: 1 },
+        ],
+        failureCooldownMs: 60_000,
+        maxAttemptsPerRole: 2,
+        maxParallelSpecialists: 3,
+        cacheTtlMs: 300_000,
+        maxCacheEntries: 64,
+        packetMaxChars: 12_000,
+        resultMaxChars: 40_000,
+      })
+    },
+    note: 'Opt-in distributed Author Brain Consumer. The parent Author stays authoritative while read-only specialist subagents run through ctx.subagents with structured packets, fallback/cooldown routing, and state-sensitive caching.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-terminal',

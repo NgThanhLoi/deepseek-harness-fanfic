@@ -44,7 +44,7 @@ const NO_MODEL_EXPERIENCE_SECTION: Readonly<Record<string, string>> = {
 const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/fanfic/fanfic': { kind: 'indirect', reason: 'The Service Definition delegates model rendering to dsh-tool-fanfic.' },
   'packages/fanfic/fanfic-local': { kind: 'indirect', reason: 'The local provider delegates model rendering to dsh-tool-fanfic.' },
-  'packages/bundle/fanfic-authoring': { kind: 'indirect', reason: 'The bundle mounts dsh-tool-fanfic, which owns every model-facing contribution.' },
+  'packages/bundle/fanfic-authoring': { kind: 'indirect', reason: 'The bundle mounts dsh-tool-fanfic and dsh-tool-fanfic-distributed, which own its model-facing contributions.' },
   'packages/attachment/attachment': { kind: 'indirect', reason: 'The storage seam delegates model request rendering to provider adapters.' },
   'packages/attachment/attachment-local': { kind: 'indirect', reason: 'The local backend delegates model request rendering to provider adapters.' },
   'packages/shell/shell': { kind: 'indirect', reason: 'The service interface delegates all model rendering to dsh-tool-bash.' },
